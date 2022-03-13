@@ -1,0 +1,132 @@
+This is a document clarifying unclear things about the actual implementation of things in DefleMask (and their re-implementations in Furnace).
+All of this was tested with v0.12.1 (the last free version), so it might be out of date, but I'm not paying for anything.
+
+
+--- Instruments ---
+
+There are two types of instruments, STD and FM. STD instruments are intended for "chippy" channels, and have "envelopes" that control the parameters of the sound (volume, timbre, arpeggio) through time. FM instruments are much more simplistic and only allow you to control the FM patch parameters.
+
+Furnace FM instruments actually do have envelopes that allow you to control EVERY single aspect of the FM patches, as well as the usual volume and arpeggio. Cool feature, but having to update about 50 envelopes per channel per frame sounds like a CPU time nightmare, so I am unlikely to bother implementing it.
+
+
+
+--- Speed ---
+
+This tracker has TWO speed values, sort of like a minimalist form of the grooves in 0CC-FamiTracker. Every even row will last for "speed 1" ticks and every odd row will last for "speed 2" ticks. The row counting resets every pattern.
+
+"Base time" is a multiplier for the speed values. It cannot be changed mid-song so it's kind of useless. It ranges from 1-6.
+
+Speeds cannot be set above $20 and any attempt to do so will be ignored. In Furnace speeds can go up to 255.
+
+
+--- Continuous effects ---
+
+"Continuous" effects (arpeggio, slide, vibrato, tremolo, etc.) are FamiTracker-style, NOT ProTracker style. The effect will continue forever until it is manually disabled with a 00 param, unlike ProTracker where any effectless row will not execute any effect.
+In this document, a continuous effect being "active" means its parameter is not 00.
+
+If two "overriding" effects are on the same row, the rightmost one takes priority.
+
+
+
+--- Volume ---
+
+Unlike FamiTracker, the volume column does not "scale" the envelope volume, it just subtracts from it.
+
+Volume effects take over the envelope volume, they do not change the volume column. (at least with STD instruments)
+This is NOT the case in Furnace.
+
+
+With volume slides, 4 is the base speed that adds 1 to the volume every tick. 8 adds 2.
+
+Any parameter with both nybbles nonzero is functionally equivalent to 0. This appears to not be the case in Furnace but I can't figure out the logic.
+
+
+Tremolo is bizarre and buggy and not worth looking into.
+
+
+
+
+--- Pitch ---
+
+Valid notes in DefleMask range from C#0 to B-7.
+Valid notes in Furnace range from C--5 (yes, the octave is NEGATIVE 5) to A-8.
+
+
+
+There is an arpeggio bug if a new note starts on the same tick that an arpeggiated note changes. The arpeggio will not "apply" itself until the next arpeggio tick, and will just play the base note regardless of the arpeggio state. The arpeggio phase will not be updated either. The arpeggio timer keeps ticking as normal.
+This bug is not emulated in Furnace.
+
+
+
+Slides use a linear pitch scale and it takes $280 (640) ticks to slide up/down an octave at slide speed 1.
+This measurement is slightly off when sliding farther though, so this should only be used as an approximation.
+
+
+
+Toneportamento effects (E1xx and E2xx) don't behave quite right if another toneportamento is initiated before the current one can finish. I personally would expect the target notes to "add to" each other, but it actually just replaces the current target note. The current base note is only properly updated when the slide reaches the target.
+
+Toneportamento speeds are divided by 4 in comparison to regular slide speeds.
+
+
+
+I don't know specifically how vibrato works in DefleMask, but here are some observations.
+
+The speed directly corresponds to the time it takes for the vibrato, regardless of the depth.
+Speed 8 takes 8 ticks to go through the entire vibrato. Not sure how to determine the rest, though.
+
+E4xx (fine vibrato depth) is a multiplier for the depth. 0 effectively disables vibrato. At the default value of F, a depth of F is about a full semitone away from the base note.
+At a depth of F and a fine depth greater than A7, the vibrato starts to glitch at the edges. Works OK in Furnace, though.
+
+E3xx changes the shape of the vibrato. 0 is a normal wave, 1 and 2 "clamp" the wave so that the amplitude never becomes negative/positive.
+
+
+Furnace's vibrato implementation is like this:
+There is a 64-entry "vibrato table", which is a table of sines where the amplitude ranges from -128 to 127. The table encompasses an entire period of the sine wave.
+Every tick, the vibrato speed is added to the vibrato table index.
+The vibrated pitch is calculated like so:
+	vibPitch = pitch + ((depth * table[index] * fineDepth) >> 4) / 15)
+From this, I assume Furnace uses a pitch scale where every 256 pitch units is a semitone.
+
+
+
+Arpeggio and slides cannot happen at the same time. The method is something like this:
+- If a slide is active, slide the note pitch.
+- Otherwise, if an arpeggio is active, IGNORE the current pitch and simply "pretend" that the pitch is that of the base note, arpeggiated.
+
+The arpeggio counters are ALWAYS updated if the effect is active, EVEN IF the actual output is being overridden by a slide.
+I assume slide is the same way, but it's impossible to test since slide always takes priority anyway.
+
+Furnace arpeggio envelopes and effects do play nice together. The envelope arpeggio and effect arpeggio are simply added together. Again, slides take priority over any arpeggio.
+
+
+
+Arpeggio and vibrato at the same time "sort of" works, but not really. The arpeggiated notes ARE vibrated, but often played at the wrong octave. I have no clue what the logic is.
+It works as expected in Furnace.
+
+
+
+
+
+--- Other Effects ---
+
+
+
+
+
+The description of Cxx (retrig) is absolutely WRONG. The correct behavior is: retrigger the note every xxth tick on the current row, not counting the first.
+
+
+
+EAxx (legato mode) has no effect in v0.12.1. Any attempt at implementation from me is just guesswork.
+
+
+
+ECxx (note cut) is always ignored if the parameter is 00, it does not "instantly" release the note. This even applies if there is no note on the row.
+The description is wrong, it releases the note, and does NOT "cut" it.
+
+
+
+EFxx is NOT a "fine tune", it works in semitones.
+
+
+

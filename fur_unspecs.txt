@@ -1,0 +1,240 @@
+These are some unofficial specs for the .fur format used in Furnace Tracker.
+The actual reader code can be found at https://github.com/tildearrow/furnace/blob/master/src/engine/fileOps.cpp
+
+
+Data types:
+- char, signed 8-bit
+- short, signed 16-bit
+- shortBE, signed 16-bit big-endian
+- int, signed 32-bit
+- intBE, signed 32-big big-endian
+- long, signed 64-bit
+- float, 32-bit floating point
+- double, 64-bit floating point
+- string, null-terminated char string
+The Furnace file reader (aside from the big-endian values) just blindly casts whatever data is there into the C data types. So, reading modules will NOT work on exotic processors.
+
+Type names suffixed with [] indicate an array. For example char[32] means an array of 32 chars.
+Some arrays are multidimensional, in these cases, the rightmost index is the most "inside". For example char[32][16] is an array of 32 arrays of 16 chars.
+
+
+.fur files are written zlib-compressed, but the program does support opening them uncompressed.
+
+
+
+OK, now onto the actual format:
+
+--- MODULE HEADER ---
+This must be at the very start of the file.
+	16 bytes: Magic "-Furnace module-"
+	short: Module version. At the time this was written, the latest was 65.
+	short: Reserved, unused.
+	int: File offset of info header
+
+
+--- INFO HEADER ---
+	4 bytes: Magic "INFO"
+	int: Unused
+	
+	char: Time base
+	char: Speed 1
+	char: Speed 2
+	char: Arpeggio tick length
+	float: Song tick rate in Hz
+	
+	short: Pattern length (in rows)
+	short: Orderlist length (per channel)
+	
+	char: Song highlight A
+	char: Song highlight B
+	
+	short: Amount of instruments
+	short: Amount of waves
+	short: Amount of samples
+	int: Amount of patterns
+	
+	char[32]: List of systems this module is using. We only care about $02 (Genesis) and $42 (Genesis+ExtChn3).
+		Behavior for this is kind of odd. When the reader encounters either of these systems, it shifts all the systems after it to the right and just inserts a "SMS" into the blank that was created.
+		Not a big deal since we only deal with Genesis anyway.
+	char[32]: Volume for each system
+	char[32]: Panning for each system
+	int[32]: "Props" for each system
+	
+	string: Module name
+	string: Module author
+	
+	float: Tuning, unused before version 33
+	
+	(this entire block is $20 bytes long)
+	char: "Limit slides" flag, unused (true) before version 37
+	char: "Linear pitch" flag, unused (true) before version 37
+	char: "Loop modality" flag, unused (0) before version 37
+	char: "Proper noise layout" flag, unused (false) before version 43
+	char: "Wave duty is vol" flag, unused (false) before version 43
+	char: "Reset macro on porta" flag, unused (true) before version 45
+	char: "Legacy volume slides" flag, unused (true) before version 45
+	char: "Compatible arpeggio" flag, unused (true) before version 45
+	char: "Note off resets slides" flag, unused (true) before version 45
+	char: "Target resets slides" flag, unused (true) before version 45
+	char: "Arp non porta" flag, unused (true before v46, false in v46) before version 47
+	char: "Alg macro behavior" flag, unused (true before v46, false in v46) before version 47
+	char: "Broken shortcut slides" flag, unused (true) before version 49
+	char: "Ignore duplicate slides" flag, unused (false) before version 50
+	char: "Stop porta on note off" flag, unused (true) before version 62
+	char: "Continuous vibrato" flag, unused (no default?) before version 62
+	char: "Broken DAC mode" flag, unused (false) before version 64
+	char: "One tick cut" flag, unused (false) before version 65
+	2 bytes: Unused
+	
+	int[AmtInstruments]: File offsets of each instrument
+	int[AmtWaves]: File offsets of each wave
+	int[AmtSamples]: File offsets of each sample
+	int[AmtPatterns]: File offsets of each pattern
+	char[AmtChans][AmtOrders]: Orderlists (AmtChans is dynamically calculated based on the present systems)
+	char[AmtChans]: Amount of effect columns
+	ONLY IF VERSION >= 39:
+		char[AmtChans]: Channel show flag
+		char[AmtChans]: Channel collapse flag
+		string[AmtChans]: Channel name
+		string[AmtChans]: Channel short name
+		string: Module comments
+	ONLY IF VERSION >= 59:
+		float: Master volume (2.0 before version 59)
+
+
+--- INSTRUMENT ---
+Instrument reading code is found in https://github.com/tildearrow/furnace/blob/master/src/engine/instrument.cpp
+
+	4 bytes: Magic "INST"
+	int: Unused
+	
+	short: Format version, same as the one in the module header.
+	char: Instrument type. We only care about STD instruments (0) and FM instruments (1).
+	char: Unused
+	string: Instrument name
+	
+	char: FM algorithm
+	char: FM feedback
+	char: FM "LFO affects frequency" degree (FMS)
+	char: FM "LFO affects amplitude" degree (AMS)
+	char: FM operator count? or maybe enable flags?
+	char: OPLL preset, unused before version 60
+	2 bytes: Unused
+	
+	For 4 operators:
+		char: AM flag
+		char: Attack rate (AR)
+		char: Decay 1 rate (D1R)
+		char: Multiplier (MUL)
+		char: Release rate (RR)
+		char: Sustain level (D1L)
+		char: Total level (TL)
+		char: Detune 2 (irrelevant on Genesis)
+		char: Rate scaling (RS) (Furnace UI calls it "EnvScale")
+		char: Detune 1 (DT1)
+		char: Decay 2 rate (D2R)
+		char: SSG-EG
+		
+		8 bytes: Irrelevant FM parameters
+		
+		12 bytes: Unused
+	
+	4 bytes: GameBoy instrument info. We don't care.
+	24 bytes: C64 instrument info. We don't care.
+	16 bytes: Amiga instrument info. We don't care.
+	
+	(pretty sure only vol/arp/duty are relevant on Genesis)
+	int[VERSION >= 17 ? 8 : 4]: Vol/Arp/Duty/Wave(/Pitch/Ex1/Ex2/Ex3) macro lengths
+	int[VERSION >= 17 ? 8 : 4]: Vol/Arp/Duty/Wave(/Pitch/Ex1/Ex2/Ex3) macro loop points
+	char: Arp macro mode (1 = fixed?)
+	char: Vol macro height (0 means 15)
+	char: Duty macro height (0 means 3)
+	char: Wave macro height (0 means 63)
+	int[VolMacroLen]: Volume macro
+	int[ArpMacroLen]: Arp macro (When VERSION < 31 and ArpMacroMode == 0, subtract 12 from the entire arp macro)
+	int[DutyMacroLen]: Duty macro
+	int[WaveMacroLen]: Wave macro
+	ONLY IF VERSION >= 17:
+		int[PitchMacroLen]: Pitch macro
+		int[Ex1MacroLen]: Ex1 macro
+		int[Ex2MacroLen]: Ex2 macro
+		int[Ex3MacroLen]: Ex3 macro
+	
+	ONLY IF VERSION >= 29:
+		int[4]: ALG/FB/FMS/AMS macro lengths
+		int[4]: ALG/FB/FMS/AMS macro loop points
+		char[12]: Vol/Arp/Duty/Wave/Pitch/Ex1/Ex2/Ex3/ALG/FB/FMS/AMS macro "open" flags.
+			These are probably for the UI and we don't have to worry about them.
+		int[ALGMacroLen]: ALG macro
+		int[FBMacroLen]: FB macro
+		int[FMSMacroLen]: FMS macro
+		int[AMSMacroLen]: AMS macro
+		
+		For 4 operators:
+			int[12]: AM/AR/DR/MULT/RR/SL/TL/DT2/RS/DT/D2R/SSG macro lengths
+			int[12]: AM/AR/DR/MULT/RR/SL/TL/DT2/RS/DT/D2R/SSG macro loop points
+			char[12]: AM/AR/DR/MULT/RR/SL/TL/DT2/RS/DT/D2R/SSG macro "open" flags
+		
+		For 4 operators:
+			int[12][__MacroLen]: AM/AR/DR/MULT/RR/SL/TL/DT2/RS/DT/D2R/SSG macros
+	
+	ONLY IF VERSION >= 44:
+		int[12]: Vol/Arp/Duty/Wave/Pitch/Ex1/Ex2/Ex3/ALG/FB/FMS/AMS macro release points
+		
+		For 4 operators:
+			int[12]: AM/AR/DR/MULT/RR/SL/TL/DT2/RS/DT/D2R/SSG macro release points
+	
+	Everything past this point is irrelevant to Genesis.
+			
+
+
+--- WAVETABLE ---
+Irrelevant to Genesis. Wavetable reading code is found in https://github.com/tildearrow/furnace/blob/master/src/engine/wavetable.cpp
+
+
+--- SAMPLE ---
+	4 bytes: Magic "SMPL"
+	int: Unused
+	
+	string: Sample name
+	int: Sample length (in samples)
+	int: Sample rate in Hz
+	short: Sample volume, unused in version 58 and later
+		Sample amplitudes are multiplied by (vol / 50.0)
+	short: Sample pitch, unused in version 58 and later
+		This is an index to the following lookup table:
+			0.1666666666, 0.2, 0.25, 0.333333333, 0.5, 1, 2, 3, 4, 5, 6
+		Index 5 (value 1) is the "unmodified" sample pitch.
+		"New" sample length is the "real" sample length DIVIDED by the lookup table value.
+	char: Sample depth, either 8 or 16 bits (invalid values are interpreted as 16)
+	
+	char: Reserved, unused.
+	
+	short: "Center rate"? unused before version 38
+	
+	int: Sample loop start, unused before version 19
+	
+	____: Actual sample data. Data is either in chars or shorts depending on the depth. Data is always signed.
+
+
+--- PATTERN ---
+	4 bytes: Magic "PATR"
+	int: Unused
+	
+	short: Channel number
+	short: Pattern index
+	int: Unused
+	
+	short[PatternLen][4 + (AmtEffectColumns*2)]: Actual pattern data
+		Structure of each row:
+			short: Note
+			short: Octave
+			short: Instrument
+			short: Volume
+			For each effect column:
+				short: Effect code
+				short: Effect param
+		See the DMF specs for more specifics.
+	
+	ONLY IF VERSION >= 51:
+		string: Pattern name
