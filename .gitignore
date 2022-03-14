@@ -1,1 +1,11 @@
 private-mods
+
+
+convert.exe
+convert
+
+
+*.o
+*.elf
+*.bin
+*.gen

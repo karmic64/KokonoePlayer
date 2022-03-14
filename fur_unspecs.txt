@@ -210,7 +210,7 @@ Irrelevant to Genesis. Wavetable reading code is found in https://github.com/til
 	
 	char: Reserved, unused.
 	
-	short: "Center rate"? unused before version 38
+	short: Sample rate of C-4 in Hz, unused before version 38
 	
 	int: Sample loop start, unused before version 19
 	

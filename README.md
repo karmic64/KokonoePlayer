@@ -1,4 +1,6 @@
-This will eventually be a DefleMask/FurnaceTracker-compatible music routine for the Sega Genesis, right now there is only some documents.
+This will eventually be a DefleMask/FurnaceTracker-compatible music routine for the Sega Genesis, right now there is only some documents and junk code.
+
+You need [WLA-DX](https://www.villehelin.com/wla.html) to assemble the Z80 part and [vasm](http://sun.hasenbraten.de/vasm/) (m68k cpu, mot syntax) to assemble the 68k part.
 
 ## Disclaimer
 
