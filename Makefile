@@ -5,7 +5,8 @@ DOTEXE :=
 endif
 
 
-CFLAGS := -s -Ofast -Wall -Wextra -Wpedantic
+CFLAGS := -s -Ofast -Wall -Wextra
+LIBS := -lz
 
 
 
