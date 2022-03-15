@@ -14,8 +14,8 @@
 int16_t get16s(uint8_t *p) { return p[0] | (p[1] << 8); }
 uint16_t get16u(uint8_t *p) { return p[0] | (p[1] << 8); }
 
-int16_t get32s(uint8_t *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24); }
-uint16_t get32u(uint8_t *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24); }
+int32_t get32s(uint8_t *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24); }
+uint32_t get32u(uint8_t *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24); }
 
 
 
@@ -132,6 +132,14 @@ int fr_memcmp (fake_reader_t *fr, void *data, size_t size)
 }
 
 
+char *fr_read_str (fake_reader_t *fr)
+{
+	char *ptr = fr->ptr;
+	fr_skip(fr, fr_strlen(fr)+1);
+	return ptr;
+}
+
+
 
 
 
@@ -239,6 +247,12 @@ typedef struct {
 
 
 /********* sample **********/
+
+
+/* rate indexes start from 1! */
+const unsigned rate_tbl[] = {8000,11025,16000,22050,32000};
+/* table ripped from furnace sources */
+const double center_rate_tbl[] = {0.1666666666, 0.2, 0.25, 0.333333333, 0.5, 1, 2, 3, 4, 5, 6};
 
 typedef struct {
 	unsigned length; /* in samples */
@@ -669,12 +683,12 @@ int read_module(char *filename)
 	
 	char *song_name;
 	char *song_author;
-	int chn3_extd;
-	int time_base;
-	int speed1;
-	int speed2;
-	int orders;
-	int pattern_size;
+	unsigned chn3_extd;
+	unsigned time_base;
+	unsigned speed1;
+	unsigned speed2;
+	unsigned orders;
+	unsigned pattern_size;
 	
 	/* these tables map patterns/instruments/samples to their global module ids */
 	/* a value of -1 indicates that the item is not defined in the song */
@@ -748,9 +762,9 @@ int read_module(char *filename)
 		
 		/**** read the ORIGINAL orderlist. we correct it to module-global pattern ids later ****/
 		puts("\nReading orderlist...");
-		for (int chn = 0; chn < song.channels; chn++)
+		for (unsigned chn = 0; chn < song.channels; chn++)
 		{
-			for (int i = 0; i < orders; i++)
+			for (unsigned i = 0; i < orders; i++)
 			{
 				song.orderlist[chn][i] = fr_read8u(&fr);
 			}
@@ -830,7 +844,15 @@ int read_module(char *filename)
 							macro_data[i] = data;
 						}
 						arp.loop = fr_read8s(&fr);
-						if (fr_read8u(&fr)) arp.type = MACRO_TYPE_ARP_FIXED;
+						if (fr_read8u(&fr)) 
+						{
+							arp.type = MACRO_TYPE_ARP_FIXED;
+						}
+						else
+						{
+							for (int i = 0; i < arp.length; i++)
+								macro_data[i] -= 12;
+						}
 						arp.data_index = add_data(macro_data, arp.length);
 						
 						ins.macro_ids[ins.macros++] = add_macro(&arp);
@@ -930,8 +952,8 @@ int read_module(char *filename)
 		}
 		
 		/******* discard wavetables ******/
-		unsigned wavetables = fr_read8u(&fr);
-		for (unsigned i = 0; i < wavetables; i++) fr_skip(&fr, fr_read32u(&fr)*4);
+		unsigned module_wavetables = fr_read8u(&fr);
+		for (unsigned i = 0; i < module_wavetables; i++) fr_skip(&fr, fr_read32u(&fr)*4);
 		
 		/****** read unpacked patterns *******/
 		puts("\nReading patterns...");
@@ -946,9 +968,11 @@ int read_module(char *filename)
 				goto read_module_fail;
 			}
 			
-			for (int ord = 0; ord < orders; ord++)
+			for (unsigned ord = 0; ord < orders; ord++)
 			{
-				for (int rown = 0; rown < pattern_size; rown++)
+				/* pattern indexes here will be remapped to indexes to pattern_tbl later */
+				song_pattern_map[chn][ord] = chn*orders + ord;
+				for (unsigned rown = 0; rown < pattern_size; rown++)
 				{
 					unpacked_row_t *row = &unpacked_pattern_tbl[(chn*orders) + ord][rown];
 					row->note = fr_read16s(&fr);
@@ -966,20 +990,15 @@ int read_module(char *filename)
 		
 		/******* read samples *******/
 		puts("\nReading samples...");
-		unsigned samples = fr_read8u(&fr);
-		if (samples > AMT_NOTES)
+		unsigned module_samples = fr_read8u(&fr);
+		if (module_samples > AMT_NOTES)
 		{
-			printf("Song has too many samples (%u)\n", samples);
+			printf("Song has too many samples (%u)\n", module_samples);
 			goto read_module_fail;
 		}
-		printf("Song has %u samples.\n", samples);
-		for (unsigned smpi = 0; smpi < samples; smpi++)
+		printf("Song has %u samples.\n", module_samples);
+		for (unsigned smpi = 0; smpi < module_samples; smpi++)
 		{
-			/* rate indexes start from 1! */
-			const unsigned rate_tbl[] = {8000,11025,16000,22050,32000};
-			/* table ripped from furnace sources lol */
-			const double center_rate_tbl[] = {0.1666666666, 0.2, 0.25, 0.333333333, 0.5, 1, 2, 3, 4, 5, 6};
-			
 			unsigned size = fr_read32u(&fr);
 			char *name = fr_read_dmf_str(&fr);
 			int rate = fr_read8s(&fr);
@@ -1027,27 +1046,570 @@ int read_module(char *filename)
 		fr_skip(&fr,0x10);
 		
 		/******** furnace reader ***********/
-		signed version = fr_read16s(&fr);
+		unsigned version = fr_read16u(&fr);
 		printf("Furnace module, version %i.\n", version);
 		if (version > 65)
 			puts("WARNING: Version is >65 - this module may be unsupported!");
 		
-		puts("NOT DONE YET.");
-		goto read_module_fail;
+		fr_skip(&fr,2);
+		unsigned info_offs = fr_read32u(&fr);
+		fr_seek(&fr,info_offs);
+		
+		
+		/***** read header *****/
+		if (fr_memcmp(&fr,"INFO",4))
+		{
+			puts("Bad info header.");
+			goto read_module_fail;
+		}
+		fr_skip(&fr,4+4);
+		time_base = fr_read8u(&fr);
+		speed1 = fr_read8u(&fr);
+		speed2 = fr_read8u(&fr);
+		fr_skip(&fr,5); /* ignore arp tick length/custom song tick rate */
+		
+		pattern_size = fr_read16u(&fr);
+		orders = fr_read16u(&fr);
+		if (!pattern_size || pattern_size > MAX_ROWS)
+		{
+			printf("Invalid pattern size %u\n", pattern_size);
+			goto read_module_fail;
+		}
+		if (!orders || orders > MAX_ORDERS)
+		{
+			printf("Invalid amount of orders %u\n", orders);
+			goto read_module_fail;
+		}
+		
+		fr_skip(&fr,2); /* skip highlights */
+		
+		unsigned module_instruments = fr_read16u(&fr);
+		unsigned module_wavetables = fr_read16u(&fr);
+		unsigned module_samples = fr_read16u(&fr);
+		unsigned module_patterns = fr_read32u(&fr);
+		printf("Module has %u instruments.\n", module_instruments);
+		printf("Module has %u samples.\n", module_samples);
+		printf("Module has %u patterns.\n", module_patterns);
+		
+		/* check systems.
+			only modules with JUST Genesis or Genesis+ExtChn3 are supported */
+		uint8_t *module_systems = fr_ptr(&fr);
+		unsigned system = 0;
+		for (int i = 0; i < 32; i++)
+		{
+			if (module_systems[i])
+			{
+				if (system)
+				{
+					puts("Module has more than one system!");
+					goto read_module_fail;
+				}
+				system = module_systems[i];
+			}
+		}
+		if (!system)
+		{
+			puts("Module has NO systems!");
+			goto read_module_fail;
+		}
+		switch (system)
+		{
+			case 0x02:
+				puts("Standard Genesis module.");
+				chn3_extd = 0;
+				break;
+			case 0x42:
+				puts("Extended CHN3 Genesis module.");
+				chn3_extd = 1;
+				break;
+			default:
+				printf("Invalid/unsupported system type $%02X.\n",system);
+				goto read_module_fail;
+		}
+		song.channels = chn3_extd ? 13 : 10;
+		
+		fr_skip(&fr, 32+32+32+(32*4)); /* we don't care about volume/panning/"props" */
+		
+		/* module metadata/flags */
+		song_name = fr_read_str(&fr);
+		song_author = fr_read_str(&fr);
+		
+		fr_skip(&fr, 20+4);
+		
+		/**** get data pointer offsets ****/
+		void *instrument_list = fr_ptr(&fr);
+		fr_skip(&fr, (module_instruments+module_wavetables)*4);
+		void *sample_list = fr_ptr(&fr);
+		fr_skip(&fr, module_samples*4);
+		void *pattern_list = fr_ptr(&fr);
+		fr_skip(&fr, module_patterns*4);
+		
+		
+		/**** read the ORIGINAL orderlist. we correct it to module-global pattern ids later ****/
+		puts("\nReading orderlist...");
+		for (unsigned chn = 0; chn < song.channels; chn++)
+		{
+			for (unsigned i = 0; i < orders; i++)
+			{
+				song.orderlist[chn][i] = fr_read8u(&fr);
+			}
+		}
+		
+		/* effect columns */
+		uint8_t *channel_effect_columns = fr_ptr(&fr);
+		
+		/* ok, we can ignore the rest of the header. */
+		
+		
+		/************** read samples *******************/
+		puts("\nReading samples...");
+		for (unsigned smpi = 0; smpi < module_samples; smpi++)
+		{
+			fr_seek(&fr, get32u(sample_list+(4*smpi)));
+			if (fr_memcmp(&fr, "SMPL",4))
+			{
+				puts("Bad sample header.");
+				goto read_module_fail;
+			}
+			fr_skip(&fr,8);
+			
+			
+			char *name = fr_read_str(&fr);
+			unsigned size = fr_read32u(&fr);
+			unsigned rate = fr_read32u(&fr);
+			unsigned volume = fr_read16u(&fr);
+			unsigned pitch = fr_read16u(&fr);
+			unsigned depth = fr_read8u(&fr);
+			fr_skip(&fr,1);
+			unsigned center_rate = fr_read16u(&fr);
+			unsigned loop = fr_read32u(&fr);
+			printf("Sample %u, bank %u: \"%s\", %u samples, rate %u, volume %u, pitch %u, depth %u, center rate %u, loop %i\n",
+				smpi%12, smpi/12, name, size, rate, volume, pitch, depth, center_rate, (int)loop);
+			if (depth != 8 && depth != 16) depth = 16;
+			
+			sample_t smp;
+			smp.length = size;
+			smp.rate = rate;
+			smp.center_rate = version < 38 ? rate : center_rate;
+			if (version < 58)
+			{
+				if (pitch > 11)
+				{
+					puts("Invalid pitch.");
+					goto read_module_fail;
+				}
+				smp.center_rate *= center_rate_tbl[pitch];
+			}
+			smp.loop = version < 19 ? (unsigned)(-1) : loop;
+			
+			/* convert sample to unsigned 8-bit */
+			uint8_t *sample_base = fr_ptr(&fr);
+			for (unsigned i = 0; i < size; i++)
+			{
+				int16_t s;
+				if (depth == 8)
+					s = fr_read8s(&fr) * 0x100;
+				else
+					s = fr_read16s(&fr);
+				if (version < 58)
+					s *= (volume / 50.0);
+				
+				sample_base[i] = (s>>8) + 128;
+			}
+			
+			smp.data_index = add_data(sample_base,size);
+			song_sample_map[smpi] = add_sample(&smp);
+		}
+		
+		
+		
+		
+		/************ read instruments *******************/
+		puts("\nReading instruments...");
+		for (unsigned insi = 0; insi < module_instruments; insi++)
+		{
+			fr_seek(&fr, get32u(instrument_list+(4*insi)));
+			if (fr_memcmp(&fr, "INST",4))
+			{
+				puts("Bad instrument header.");
+				goto read_module_fail;
+			}
+			fr_skip(&fr,10);
+			
+			
+			unsigned imode = fr_read8u(&fr);
+			fr_skip(&fr,1);
+			char *name = fr_read_str(&fr);
+			
+			instrument_t ins;
+			printf("Instrument $%02X: \"%s\", ",insi,name);
+			switch (imode)
+			{
+				case 0:
+					puts("STD instrument.");
+					ins.type = INSTR_TYPE_PSG;
+					break;
+				case 1:
+					puts("FM instrument.");
+					ins.type = INSTR_TYPE_FM;
+					break;
+				case 4:
+					puts("Sample instrument.");
+					ins.type = INSTR_TYPE_SMPL_MELO;
+					break;
+				default:
+					printf("Invalid instrument type %u.\n", imode);
+					goto read_module_fail;
+			}
+			
+			
+			/* read fm patch info */
+			fm_patch_t fm;
+			unsigned alg = fr_read8u(&fr);
+			unsigned fb = fr_read8u(&fr);
+			unsigned fms = fr_read8u(&fr);
+			unsigned ams = fr_read8u(&fr);
+			fr_skip(&fr,4);
+			
+			fm.regb0 = ((fb&7)<<3) | (alg&7);
+			fm.regb4 = ((ams&3)<<4) | (fms&7);
+			
+			for (int op = 0; op < 4; op++)
+			{
+				unsigned am = fr_read8u(&fr);
+				unsigned ar = fr_read8u(&fr);
+				unsigned d1r = fr_read8u(&fr);
+				unsigned mul = fr_read8u(&fr);
+				unsigned rr = fr_read8u(&fr);
+				unsigned d1l = fr_read8u(&fr);
+				unsigned tl = fr_read8u(&fr);
+				fr_read8u(&fr); /* dt2, unused on megadrive */
+				unsigned rs = fr_read8u(&fr);
+				unsigned dt = fr_read8u(&fr);
+				unsigned d2r = fr_read8u(&fr);
+				unsigned ssg_eg = fr_read8u(&fr);
+				fr_skip(&fr,8+12);
+				
+				fm.reg30[op] = ((dt&7)<<4) | (mul&0x0f);
+				fm.reg40[op] = tl&0x7f;
+				fm.reg50[op] = ((rs&3)<<6) | (ar&0x1f);
+				fm.reg60[op] = ((am&1)<<7) | (d1r&0x1f);
+				fm.reg70[op] = d2r&0x1f;
+				fm.reg80[op] = ((d1l&0x0f)<<4) | (rr&0x0f);
+				fm.reg90[op] = ((ssg_eg&0x10)>>1) | (ssg_eg&7);
+			}
+			
+			
+			/* sample id */
+			fr_skip(&fr, 4+24);
+			unsigned sample_id = fr_read16u(&fr);
+			fr_skip(&fr, 16-2);
+			
+			
+			/************ read macros ************/
+			const uint8_t global_macro_type_tbl[] = {
+				MACRO_TYPE_VOL, MACRO_TYPE_ARP, MACRO_TYPE_NOISE, -1,
+				-1, -1, -1, -1
+			};
+			const uint8_t fm_macro_type_tbl[] = {
+				MACRO_TYPE_FM_ALG, MACRO_TYPE_FM_FB, MACRO_TYPE_FM_FMS, MACRO_TYPE_FM_AMS
+			};
+			const uint8_t fm_op_macro_type_tbl[] = {
+				MACRO_TYPE_FM_OP_AM, MACRO_TYPE_FM_OP_AR, MACRO_TYPE_FM_OP_D1R, MACRO_TYPE_FM_OP_MUL,
+				MACRO_TYPE_FM_OP_RR, MACRO_TYPE_FM_OP_D1L, MACRO_TYPE_FM_OP_TL, -4,
+				MACRO_TYPE_FM_OP_RS, MACRO_TYPE_FM_OP_DT, MACRO_TYPE_FM_OP_D2R, MACRO_TYPE_FM_OP_SSG_EG
+			};
+			const char* global_macro_name_tbl[] = {
+				"volume","arp","duty/noise","wave","pitch","ex1","ex2","ex3"
+			};
+			const char* fm_macro_name_tbl[] = {
+				"ALG","FB","FMS","AMS"
+			};
+			const char* fm_op_macro_name_tbl[] = {
+				"AM","AR","D1R","MUL","RR","D1L","TL","DT2","RS","DT","D2R","SSG-EG"
+			};
+			
+			macro_t ins_macro_tbl[8+4+(12*4)];
+			for (int i = 0; i < (8+4+(12*4)); i++)
+			{
+				if (i < 8)
+					ins_macro_tbl[i].type = global_macro_type_tbl[i];
+				else if (i < 8+4)
+					ins_macro_tbl[i].type = fm_macro_type_tbl[i-8];
+				else
+					ins_macro_tbl[i].type = fm_op_macro_type_tbl[(i-8-4) % 12] + ((i-8-4) / 12);
+				ins_macro_tbl[i].length = 0;
+				ins_macro_tbl[i].loop = -1;
+				ins_macro_tbl[i].release = -1;
+			}
+			macro_t *global_macro_tbl = &ins_macro_tbl[0];
+			macro_t *fm_macro_tbl = &ins_macro_tbl[8];
+			macro_t *fm_op_macro_tbl = &ins_macro_tbl[8+4];
+			
+			/*** global macros ***/
+			unsigned global_macros = version >= 17 ? 8 : 4;
+			
+			for (unsigned i = 0; i < global_macros; i++)
+			{
+				unsigned l = fr_read32u(&fr);
+				if (l > MAX_MACRO_LEN)
+				{
+					printf("Bad %s macro length %u.\n", global_macro_name_tbl[i],l);
+					goto read_module_fail;
+				}
+				global_macro_tbl[i].length = l;
+			}
+			
+			for (unsigned i = 0; i < global_macros; i++)
+			{
+				unsigned l = fr_read32u(&fr);
+				if (l != (unsigned)-1 && l >= (unsigned)global_macro_tbl[i].length)
+				{
+					printf("Bad %s macro loop point %u.\n", global_macro_name_tbl[i],l);
+					goto read_module_fail;
+				}
+				global_macro_tbl[i].loop = l;
+			}
+			
+			if (fr_read8u(&fr)) global_macro_tbl[1].type = MACRO_TYPE_ARP_FIXED;
+			fr_skip(&fr,3);
+			
+			for (unsigned i = 0; i < global_macros; i++)
+			{
+				unsigned length = global_macro_tbl[i].length;
+				if (length)
+				{
+					uint8_t macro_data[MAX_MACRO_LEN];
+					for (unsigned j = 0; j < length; j++)
+					{
+						macro_data[j] = fr_read32s(&fr);
+						if (version < 31 && global_macro_tbl[i].type == MACRO_TYPE_ARP)
+							macro_data[j] -= 12;
+					}
+					global_macro_tbl[i].data_index = add_data(macro_data,length);
+				}
+			}
+			
+			/**** fm macros ***/
+			if (version >= 29)
+			{
+				for (unsigned i = 0; i < 4; i++)
+				{
+					unsigned l = fr_read32u(&fr);
+					if (l > MAX_MACRO_LEN)
+					{
+						printf("Bad FM %s macro length %u.\n", fm_macro_name_tbl[i],l);
+						goto read_module_fail;
+					}
+					fm_macro_tbl[i].length = l;
+				}
+				
+				for (unsigned i = 0; i < 4; i++)
+				{
+					unsigned l = fr_read32u(&fr);
+					if (l != (unsigned)-1 && l >= (unsigned)fm_macro_tbl[i].length)
+					{
+						printf("Bad FM %s macro loop point %u.\n", fm_macro_name_tbl[i],l);
+						goto read_module_fail;
+					}
+					fm_macro_tbl[i].loop = l;
+				}
+				
+				fr_skip(&fr,12);
+				
+				for (unsigned i = 0; i < 4; i++)
+				{
+					unsigned length = fm_macro_tbl[i].length;
+					if (length)
+					{
+						uint8_t macro_data[MAX_MACRO_LEN];
+						for (unsigned j = 0; j < length; j++)
+						{
+							macro_data[j] = fr_read32s(&fr);
+						}
+						fm_macro_tbl[i].data_index = add_data(macro_data,length);
+					}
+				}
+				
+				
+				/***** operator macros *****/
+				for (unsigned op = 0; op < 4; op++)
+				{
+					for (unsigned i = 0; i < 12; i++)
+					{
+						unsigned l = fr_read32u(&fr);
+						if (l > MAX_MACRO_LEN)
+						{
+							printf("Bad FM op%u %s macro length %u.\n", op+1, fm_op_macro_name_tbl[i],l);
+							goto read_module_fail;
+						}
+						fm_op_macro_tbl[(op*12) + i].length = l;
+					}
+					
+					for (unsigned i = 0; i < 12; i++)
+					{
+						unsigned l = fr_read32u(&fr);
+						if (l != (unsigned)-1 && l >= (unsigned)fm_op_macro_tbl[(op*12) + i].length)
+						{
+							printf("Bad FM op%u %s macro loop point %u.\n", op+1, fm_op_macro_name_tbl[i],l);
+							goto read_module_fail;
+						}
+						fm_op_macro_tbl[(op*12) + i].loop = l;
+					}
+					
+					fr_skip(&fr,12);
+				}
+				
+				for (unsigned op = 0; op < 4; op++)
+				{
+					for (unsigned i = 0; i < 12; i++)
+					{
+						unsigned l = fm_op_macro_tbl[(op*12) + i].length;
+						if (l)
+						{
+							uint8_t macro_data[MAX_MACRO_LEN];
+							for (unsigned j = 0; j < l; j++)
+							{
+								macro_data[j] = fr_read32s(&fr);
+							}
+							fm_op_macro_tbl[(op*12) + i].data_index = add_data(macro_data,l);
+						}
+					}
+				}
+			}
+			
+			/***** macro release points ******/
+			if (version >= 44)
+			{
+				for (unsigned i = 0; i < global_macros; i++)
+				{
+					unsigned r = fr_read32u(&fr);
+					if (r != (unsigned)-1 && r >= (unsigned)global_macro_tbl[i].length)
+					{
+						printf("Bad %s macro release point %u.\n", global_macro_name_tbl[i],r);
+						goto read_module_fail;
+					}
+					global_macro_tbl[i].release = r;
+				}
+				
+				for (unsigned i = 0; i < 4; i++)
+				{
+					unsigned r = fr_read32u(&fr);
+					if (r != (unsigned)-1 && r >= (unsigned)fm_macro_tbl[i].length)
+					{
+						printf("Bad FM %s macro release point %u.\n", fm_macro_name_tbl[i],r);
+						goto read_module_fail;
+					}
+					fm_macro_tbl[i].release = r;
+				}
+				
+				for (unsigned op = 0; op < 4; op++)
+				{
+					for (unsigned i = 0; i < 12; i++)
+					{
+						unsigned r = fr_read32u(&fr);
+						if (r != (unsigned)-1 && r >= (unsigned)fm_op_macro_tbl[(op*12) + i].length)
+						{
+							printf("Bad FM op%u %s macro release point %u.\n", op+1, fm_op_macro_name_tbl[i],r);
+							goto read_module_fail;
+						}
+						fm_op_macro_tbl[(op*12) + i].release = r;
+					}
+				}
+			}
+			
+			/******* we are FINALLY done reading macros, now add them to the instrument ******/
+			ins.macros = 0;
+			for (unsigned i = 0; i < 8+4+(12*4); i++)
+			{
+				macro_t *m = &ins_macro_tbl[i];
+				if (m->length == 0 || m->type >= 0x80) continue;
+				
+				ins.macro_ids[ins.macros++] = add_macro(m);
+			}
+			
+			/****** depending on the instrument type, specify extra id */
+			switch (imode)
+			{
+				case 1:
+					ins.extra_id = add_fm_patch(&fm);
+					break;
+				case 4:
+					ins.extra_id = song_sample_map[sample_id];
+					break;
+			}
+			
+			
+			/***** we're done, add the instrument ****/
+			song_instrument_map[insi] = add_instrument(&ins);
+		}
+		
+		
+		
+		
+		/************** read patterns ************/
+		puts("\nReading patterns...");
+		unpacked_pattern_tbl = malloc(module_patterns*sizeof(*unpacked_pattern_tbl));
+		memset(unpacked_pattern_tbl,-1,module_patterns*sizeof(*unpacked_pattern_tbl));
+		for (unsigned pati = 0; pati < module_patterns; pati++)
+		{
+			fr_seek(&fr, get32u(pattern_list + (pati*4)));
+			if (fr_memcmp(&fr,"PATR",4))
+			{
+				puts("Bad pattern header.");
+				goto read_module_fail;
+			}
+			fr_skip(&fr,8);
+			
+			unsigned chn = fr_read16u(&fr);
+			unsigned ord = fr_read16u(&fr);
+			if (chn >= song.channels)
+			{
+				printf("Invalid channel number %u.\n",chn);
+				goto read_module_fail;
+			}
+			if (ord >= orders)
+			{
+				printf("Invalid order number %u.\n",chn);
+				goto read_module_fail;
+			}
+			if (song_pattern_map[chn][ord] != -1)
+			{
+				printf("Channel %u, order %u already has an assigned pattern.\n",chn,ord);
+				goto read_module_fail;
+			}
+			song_pattern_map[chn][ord] = pati;
+			fr_skip(&fr,4);
+			
+			for (unsigned rown = 0; rown < pattern_size; rown++)
+			{
+				unpacked_row_t *row = &unpacked_pattern_tbl[pati][rown];
+				
+				row->note = fr_read16s(&fr);
+				row->octave = fr_read16s(&fr);
+				row->instrument = fr_read16s(&fr);
+				row->volume = fr_read16s(&fr);
+				for (unsigned i = 0; i < channel_effect_columns[chn]; i++)
+				{
+					row->effects[i].code = fr_read16s(&fr);
+					row->effects[i].param = fr_read16s(&fr);
+				}
+			}
+		}
 	}
 	else
 	{
 		puts("Can't recognize format.");
 		goto read_module_fail;
 	}
-	free(fbuf);
-	fbuf = NULL;
 	
 	
 	/********* ok, we read the module. now compile it **********/
 	puts("Module was successfully read.\n");
 	printf("Song name: \"%s\"\n", song_name);
 	printf("Song author: \"%s\"\n", song_author);
+	free(fbuf);
+	fbuf = NULL;
 	
 	printf("Song size: %u orders, pattern size: %u rows\n", orders, pattern_size);
 	song.pattern_size = pattern_size-1;

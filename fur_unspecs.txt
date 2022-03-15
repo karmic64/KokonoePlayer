@@ -65,7 +65,7 @@ This must be at the very start of the file.
 	
 	float: Tuning, unused before version 33
 	
-	(this entire block is $20 bytes long)
+	(this entire block is 20 bytes long)
 	char: "Limit slides" flag, unused (true) before version 37
 	char: "Linear pitch" flag, unused (true) before version 37
 	char: "Loop modality" flag, unused (0) before version 37
@@ -109,7 +109,7 @@ Instrument reading code is found in https://github.com/tildearrow/furnace/blob/m
 	int: Unused
 	
 	short: Format version, same as the one in the module header.
-	char: Instrument type. We only care about STD instruments (0) and FM instruments (1).
+	char: Instrument type. We only care about STD instruments (0), FM instruments (1), and sample instruments (4).
 	char: Unused
 	string: Instrument name
 	
@@ -141,7 +141,7 @@ Instrument reading code is found in https://github.com/tildearrow/furnace/blob/m
 	
 	4 bytes: GameBoy instrument info. We don't care.
 	24 bytes: C64 instrument info. We don't care.
-	16 bytes: Amiga instrument info. We don't care.
+	16 bytes: Amiga instrument info. We only care about the first short (the sample ID).
 	
 	(pretty sure only vol/arp/duty are relevant on Genesis)
 	int[VERSION >= 17 ? 8 : 4]: Vol/Arp/Duty/Wave(/Pitch/Ex1/Ex2/Ex3) macro lengths
