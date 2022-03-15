@@ -146,6 +146,7 @@ Instrument reading code is found in https://github.com/tildearrow/furnace/blob/m
 	(pretty sure only vol/arp/duty are relevant on Genesis)
 	int[VERSION >= 17 ? 8 : 4]: Vol/Arp/Duty/Wave(/Pitch/Ex1/Ex2/Ex3) macro lengths
 	int[VERSION >= 17 ? 8 : 4]: Vol/Arp/Duty/Wave(/Pitch/Ex1/Ex2/Ex3) macro loop points
+		Out-of-range loop points are NOT an error, they are simply treated as "no loop".
 	char: Arp macro mode (1 = fixed?)
 	char: Vol macro height (0 means 15)
 	char: Duty macro height (0 means 3)

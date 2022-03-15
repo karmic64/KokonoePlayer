@@ -221,9 +221,6 @@ typedef struct {
 	short param;
 } effect_t;
 
-#define N_EMPTY (-1)
-#define N_OFF (-2)
-
 typedef struct {
 	short note;
 	short octave;
@@ -492,6 +489,8 @@ int instrument_cmp(instrument_t *a, instrument_t *b)
 		case INSTR_TYPE_FM:
 			return fm_patch_cmp(&fm_patch_tbl[a->extra_id], &fm_patch_tbl[b->extra_id]);
 		case INSTR_TYPE_SMPL_MELO:
+			if (a->extra_id == (unsigned)-1 && b->extra_id == (unsigned)-1) return 1;
+			if (a->extra_id == (unsigned)-1 || b->extra_id == (unsigned)-1) return 0;
 			return sample_cmp(&sample_tbl[a->extra_id], &sample_tbl[b->extra_id]);
 		case INSTR_TYPE_SMPL_PERC:
 			return memcmp(&sample_map_tbl[a->extra_id], &sample_map_tbl[b->extra_id], sizeof(sample_map_t));
@@ -1157,6 +1156,15 @@ int read_module(char *filename)
 		
 		/* effect columns */
 		uint8_t *channel_effect_columns = fr_ptr(&fr);
+		for (unsigned i = 0; i < song.channels; i++)
+		{
+			unsigned c = channel_effect_columns[i];
+			if (c > MAX_EFFECT_COLUMNS)
+			{
+				printf("Channel %u has too many effect columns (%u).\n", i,c);
+				goto read_module_fail;
+			}
+		}
 		
 		/* ok, we can ignore the rest of the header. */
 		
@@ -1254,7 +1262,7 @@ int read_module(char *filename)
 					ins.type = INSTR_TYPE_FM;
 					break;
 				case 4:
-					puts("Sample instrument.");
+					puts("sample instrument.");
 					ins.type = INSTR_TYPE_SMPL_MELO;
 					break;
 				default:
@@ -1362,13 +1370,11 @@ int read_module(char *filename)
 			
 			for (unsigned i = 0; i < global_macros; i++)
 			{
-				unsigned l = fr_read32u(&fr);
-				if (l != (unsigned)-1 && l >= (unsigned)global_macro_tbl[i].length)
-				{
-					printf("Bad %s macro loop point %u.\n", global_macro_name_tbl[i],l);
-					goto read_module_fail;
-				}
-				global_macro_tbl[i].loop = l;
+				unsigned loop = fr_read32u(&fr);
+				unsigned len = global_macro_tbl[i].length;
+				if (!len) continue;
+				if (loop != (unsigned)-1 && loop >= len) continue;
+				global_macro_tbl[i].loop = loop;
 			}
 			
 			if (fr_read8u(&fr)) global_macro_tbl[1].type = MACRO_TYPE_ARP_FIXED;
@@ -1406,13 +1412,11 @@ int read_module(char *filename)
 				
 				for (unsigned i = 0; i < 4; i++)
 				{
-					unsigned l = fr_read32u(&fr);
-					if (l != (unsigned)-1 && l >= (unsigned)fm_macro_tbl[i].length)
-					{
-						printf("Bad FM %s macro loop point %u.\n", fm_macro_name_tbl[i],l);
-						goto read_module_fail;
-					}
-					fm_macro_tbl[i].loop = l;
+					unsigned loop = fr_read32u(&fr);
+					unsigned len = fm_macro_tbl[i].length;
+					if (!len) continue;
+					if (loop != (unsigned)-1 && loop >= len) continue;
+					fm_macro_tbl[i].loop = loop;
 				}
 				
 				fr_skip(&fr,12);
@@ -1448,13 +1452,11 @@ int read_module(char *filename)
 					
 					for (unsigned i = 0; i < 12; i++)
 					{
-						unsigned l = fr_read32u(&fr);
-						if (l != (unsigned)-1 && l >= (unsigned)fm_op_macro_tbl[(op*12) + i].length)
-						{
-							printf("Bad FM op%u %s macro loop point %u.\n", op+1, fm_op_macro_name_tbl[i],l);
-							goto read_module_fail;
-						}
-						fm_op_macro_tbl[(op*12) + i].loop = l;
+						unsigned loop = fr_read32u(&fr);
+						unsigned len = fm_op_macro_tbl[(op*12) + i].length;
+						if (!len) continue;
+						if (loop != (unsigned)-1 && loop >= len) continue;
+						fm_op_macro_tbl[(op*12) + i].loop = loop;
 					}
 					
 					fr_skip(&fr,12);
@@ -1484,22 +1486,18 @@ int read_module(char *filename)
 				for (unsigned i = 0; i < global_macros; i++)
 				{
 					unsigned r = fr_read32u(&fr);
-					if (r != (unsigned)-1 && r >= (unsigned)global_macro_tbl[i].length)
-					{
-						printf("Bad %s macro release point %u.\n", global_macro_name_tbl[i],r);
-						goto read_module_fail;
-					}
+					unsigned len = global_macro_tbl[i].length;
+					if (!len) continue;
+					if (r != (unsigned)-1 && r >= len) continue;
 					global_macro_tbl[i].release = r;
 				}
 				
 				for (unsigned i = 0; i < 4; i++)
 				{
 					unsigned r = fr_read32u(&fr);
-					if (r != (unsigned)-1 && r >= (unsigned)fm_macro_tbl[i].length)
-					{
-						printf("Bad FM %s macro release point %u.\n", fm_macro_name_tbl[i],r);
-						goto read_module_fail;
-					}
+					unsigned len = fm_macro_tbl[i].length;
+					if (!len) continue;
+					if (r != (unsigned)-1 && r >= len) continue;
 					fm_macro_tbl[i].release = r;
 				}
 				
@@ -1508,11 +1506,9 @@ int read_module(char *filename)
 					for (unsigned i = 0; i < 12; i++)
 					{
 						unsigned r = fr_read32u(&fr);
-						if (r != (unsigned)-1 && r >= (unsigned)fm_op_macro_tbl[(op*12) + i].length)
-						{
-							printf("Bad FM op%u %s macro release point %u.\n", op+1, fm_op_macro_name_tbl[i],r);
-							goto read_module_fail;
-						}
+						unsigned len = fm_op_macro_tbl[(op*12) + i].length;
+						if (!len) continue;
+						if (r != (unsigned)-1 && r >= len) continue;
 						fm_op_macro_tbl[(op*12) + i].release = r;
 					}
 				}
@@ -1535,6 +1531,11 @@ int read_module(char *filename)
 					ins.extra_id = add_fm_patch(&fm);
 					break;
 				case 4:
+					if (sample_id >= AMT_NOTES)
+					{
+						printf("Sample ID %u too large.\n",sample_id);
+						goto read_module_fail;
+					}
 					ins.extra_id = song_sample_map[sample_id];
 					break;
 			}
@@ -1566,11 +1567,6 @@ int read_module(char *filename)
 			if (chn >= song.channels)
 			{
 				printf("Invalid channel number %u.\n",chn);
-				goto read_module_fail;
-			}
-			if (ord >= orders)
-			{
-				printf("Invalid order number %u.\n",chn);
 				goto read_module_fail;
 			}
 			if (song_pattern_map[chn][ord] != -1)
