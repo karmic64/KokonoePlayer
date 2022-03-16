@@ -235,7 +235,11 @@ Irrelevant to Genesis. Wavetable reading code is found in https://github.com/til
 			For each effect column:
 				short: Effect code
 				short: Effect param
-		See the DMF specs for more specifics.
+		A note value of 12 (C-) means the C of the NEXT octave.
+		Contrary to the DMF specs, ONLY the note value being 0 means the note is blank. Furnace might write garbage to the octave.
+		Furnace allows sub-C-0 notes, but stores them in a weird way. Here is a working formula to get a note value in "semitones above C-0":
+			note + (octave * 12)
+		Be aware that you should interpret the octave as a signed 8-BIT value, and IGNORE the upper byte. Furnace always writes 0 there.
 	
 	ONLY IF VERSION >= 51:
 		string: Pattern name

@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <limits.h>
 #include <sys/stat.h>
 
 #include <zlib.h>
@@ -186,6 +187,21 @@ const uint8_t channel_arrangement_ext[] = {
 };
 
 
+const uint8_t channel_arrangement_fm[] = {
+	CHN_FM_1, CHN_FM_2, CHN_FM_3, CHN_FM_4, CHN_FM_5, CHN_FM_6,
+};
+
+const uint8_t channel_arrangement_fm_ext[] = {
+	CHN_FM_1, CHN_FM_2,
+		CHN_FM_3_OP1, CHN_FM_3_OP2, CHN_FM_3_OP3, CHN_FM_3_OP4,
+	CHN_FM_4, CHN_FM_5, CHN_FM_6,
+};
+
+const uint8_t channel_arrangement_psg[] = {
+	CHN_PSG_1, CHN_PSG_2, CHN_PSG_3, CHN_PSG_N,
+};
+
+
 typedef struct {
 	uint8_t orders;
 	uint8_t channels;
@@ -207,14 +223,68 @@ typedef struct {
 
 /******** pattern **********/
 
-/* we offer notes C-0 to B-7 */
-#define AMT_NOTES (12*8)
+/* we offer notes C--5 to B-8 */
+#define AMT_NOTES (12*(9+5))
 
 /* deflemask's max is 4, furnace's max is 8 */
 #define MAX_EFFECT_COLUMNS 8
 
 /* both deflemask and furnace */
 #define MAX_ROWS 256
+
+
+const uint8_t effect_map[] = {
+	0,1,2,3,4,8,9,0xf,0xa,0xb,0xd,0xc,
+	0xe0,0xe1,0xe2,0xe3,0xe4,0xe5,0xea,0xeb,0xec,0xed,0xee,
+	0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x19,0x1a,0x1b,0x1c,0x1d,
+	0x20
+};
+enum {
+	EFF_ARP = 0,
+	EFF_PORTAUP,
+	EFF_PORTADOWN,
+	EFF_TONEPORTA,
+	EFF_VIBRATO,
+	EFF_PANNING,
+	EFF_SPEED1,
+	EFF_SPEED2,
+	EFF_VOLSLIDE,
+	EFF_POSJUMP,
+	EFF_PATTBREAK,
+	EFF_RETRIG,
+	
+	EFF_ARPTICK,
+	EFF_NOTEUP,
+	EFF_NOTEDOWN,
+	EFF_VIBMODE,
+	EFF_VIBDEPTH,
+	EFF_FINETUNE,
+	EFF_LEGATO,
+	EFF_SMPLBANK,
+	EFF_CUT,
+	EFF_DELAY,
+	EFF_SYNC,
+	
+	EFF_LFO,
+	EFF_FB,
+	EFF_TL1,
+	EFF_TL2,
+	EFF_TL3,
+	EFF_TL4,
+	EFF_MUL,
+	EFF_DAC,
+	EFF_AR,
+	EFF_AR1,
+	EFF_AR2,
+	EFF_AR3,
+	EFF_AR4,
+	
+	EFF_NOISE,
+	
+	AMT_SUPPORTED_EFFECTS
+};
+
+
 
 typedef struct {
 	short code;
@@ -380,6 +450,8 @@ pattern_t *pattern_tbl = NULL;
 unsigned instruments = 0;
 unsigned instrument_max = 0;
 instrument_t *instrument_tbl = NULL;
+/* keeps a count of instrument switches so we can sort by most used */
+uintmax_t *instrument_histogram[0x1000];
 
 /* macros in the module */
 unsigned macros = 0;
@@ -578,6 +650,9 @@ int read_module(char *filename)
 	
 	unpacked_pattern_t *unpacked_pattern_tbl = NULL;
 	
+	/* this table maps unpacked patterns to the pattern_tbl */
+	short *global_pattern_map = NULL;
+	
 	/* if the reading fails, we can safely discard any data this function created. */
 	/* so, save the old table lengths so we can restore them in the fail handler */
 	unsigned old_databuf_size = databuf_size;
@@ -682,12 +757,13 @@ int read_module(char *filename)
 	
 	char *song_name;
 	char *song_author;
-	unsigned chn3_extd;
 	unsigned time_base;
 	unsigned speed1;
 	unsigned speed2;
 	unsigned orders;
 	unsigned pattern_size;
+	
+	unsigned module_patterns;
 	
 	/* these tables map patterns/instruments/samples to their global module ids */
 	/* a value of -1 indicates that the item is not defined in the song */
@@ -698,6 +774,7 @@ int read_module(char *filename)
 	memset(song_pattern_map, -1, sizeof(song_pattern_map));
 	memset(song_instrument_map, -1, sizeof(song_instrument_map));
 	memset(song_sample_map, -1, sizeof(song_sample_map));
+	
 	
 	
 	/* try detecting format */
@@ -725,17 +802,18 @@ int read_module(char *filename)
 		{
 			case 0x02:
 				puts("Standard Genesis module.");
-				chn3_extd = 0;
+				memcpy(song.channel_arrangement, channel_arrangement_std, sizeof(channel_arrangement_std));
+				song.channels = 10;
 				break;
 			case 0x42:
 				puts("Extended CHN3 Genesis module.");
-				chn3_extd = 1;
+				memcpy(song.channel_arrangement, channel_arrangement_ext, sizeof(channel_arrangement_ext));
+				song.channels = 13;
 				break;
 			default:
 				printf("Invalid/unsupported system type $%02X.\n",system);
 				goto read_module_fail;
 		}
-		song.channels = chn3_extd ? 13 : 10;
 		
 		song_name = fr_read_dmf_str(&fr);
 		song_author = fr_read_dmf_str(&fr);
@@ -759,15 +837,24 @@ int read_module(char *filename)
 			goto read_module_fail;
 		}
 		
-		/**** read the ORIGINAL orderlist. we correct it to module-global pattern ids later ****/
+		/*
+			ok, technically we should be reading the orderlist right now. but deflemask's
+			way of saving patterns is absolutely nasty, so we just ignore it.
+			
+			essentially, in a saved module the orderlist is just for show. the patterns are
+			just saved by going through the entire song and saving every pattern in the order
+			they are played in the module, keeping duplicates, and worst of all, discarding
+			any unused patterns.
+		*/
 		puts("\nReading orderlist...");
 		for (unsigned chn = 0; chn < song.channels; chn++)
 		{
 			for (unsigned i = 0; i < orders; i++)
 			{
-				song.orderlist[chn][i] = fr_read8u(&fr);
+				song.orderlist[chn][i] = i;
 			}
 		}
+		fr_skip(&fr, song.channels * orders);
 		
 		/****** read instruments ******/
 		puts("\nReading instruments...");
@@ -956,8 +1043,9 @@ int read_module(char *filename)
 		
 		/****** read unpacked patterns *******/
 		puts("\nReading patterns...");
-		unpacked_pattern_tbl = malloc(song.channels*orders*sizeof(*unpacked_pattern_tbl));
-		memset(unpacked_pattern_tbl, -1, song.channels*orders*sizeof(*unpacked_pattern_tbl));
+		module_patterns = song.channels*orders;
+		unpacked_pattern_tbl = malloc(module_patterns*sizeof(*unpacked_pattern_tbl));
+		memset(unpacked_pattern_tbl, -1, module_patterns*sizeof(*unpacked_pattern_tbl));
 		for (unsigned chn = 0; chn < song.channels; chn++)
 		{
 			unsigned effect_columns = fr_read8u(&fr);
@@ -967,19 +1055,37 @@ int read_module(char *filename)
 				goto read_module_fail;
 			}
 			
-			for (unsigned ord = 0; ord < orders; ord++)
+			for (unsigned chn_pati = 0; chn_pati < orders; chn_pati++)
 			{
 				/* pattern indexes here will be remapped to indexes to pattern_tbl later */
-				song_pattern_map[chn][ord] = chn*orders + ord;
+				song_pattern_map[chn][chn_pati] = chn*orders + chn_pati;
 				for (unsigned rown = 0; rown < pattern_size; rown++)
 				{
-					unpacked_row_t *row = &unpacked_pattern_tbl[(chn*orders) + ord][rown];
+					unpacked_row_t *row = &unpacked_pattern_tbl[(chn*orders) + chn_pati][rown];
 					row->note = fr_read16s(&fr);
 					row->octave = fr_read16s(&fr);
 					row->volume = fr_read16s(&fr);
 					for (unsigned eff = 0; eff < effect_columns; eff++)
 					{
-						row->effects[eff].code = fr_read16s(&fr);
+						int code = fr_read16s(&fr);
+						/*
+							deflemask has some protracker-style "do both effects at once" effects.
+							but since effects are continuous instead of protracker-style, these
+							effects are kind of useless. so, remap them to more sensible equivalents.
+							
+							we only do this for deflemask modules because i'm worried furnace might
+							re-allocate them later lol
+						*/
+						switch (code)
+						{
+							case 5:
+								code = 0x0a;
+								break;
+							case 6:
+								code = 0x0a;
+								break;
+						}
+						row->effects[eff].code = code;
 						row->effects[eff].param = fr_read16s(&fr);
 					}
 					row->instrument = fr_read16s(&fr);
@@ -1085,49 +1191,102 @@ int read_module(char *filename)
 		unsigned module_instruments = fr_read16u(&fr);
 		unsigned module_wavetables = fr_read16u(&fr);
 		unsigned module_samples = fr_read16u(&fr);
-		unsigned module_patterns = fr_read32u(&fr);
+		module_patterns = fr_read32u(&fr);
 		printf("Module has %u instruments.\n", module_instruments);
 		printf("Module has %u samples.\n", module_samples);
 		printf("Module has %u patterns.\n", module_patterns);
 		
-		/* check systems.
-			only modules with JUST Genesis or Genesis+ExtChn3 are supported */
-		uint8_t *module_systems = fr_ptr(&fr);
-		unsigned system = 0;
-		for (int i = 0; i < 32; i++)
+		/* systems we support:
+			$02: genesis
+			$42: ext. genesis
+			$83: ym2612
+			$a0: ext.ym2612
+			$03: sms
+		*/
+		song.channels = 0;
+		unsigned has_fm = 0;
+		unsigned has_psg = 0;
+		
+		for (unsigned i = 0; i < 32; i++)
 		{
-			if (module_systems[i])
+			uint8_t system = fr_read8u(&fr);
+			
+			if ((system == 2 || system == 0x42) && (has_fm || has_psg))
 			{
-				if (system)
+				puts("Genesis system encountered, but the module already has FM/PSG.");
+				goto read_module_fail;
+			}
+			else if (system == 2)
+			{
+				puts("Standard Genesis module.");
+				memcpy(song.channel_arrangement+song.channels, channel_arrangement_std, sizeof(channel_arrangement_std));
+				song.channels += 10;
+				
+				has_fm++;
+				has_psg++;
+			}
+			else if (system == 0x42)
+			{
+				puts("Extended Genesis module.");
+				memcpy(song.channel_arrangement+song.channels, channel_arrangement_ext, sizeof(channel_arrangement_ext));
+				song.channels += 13;
+				
+				has_fm++;
+				has_psg++;
+			}
+			else if (system == 0x83)
+			{
+				if (has_fm)
 				{
-					puts("Module has more than one system!");
+					puts("Standard YM2612 encountered, but the module already has FM.");
 					goto read_module_fail;
 				}
-				system = module_systems[i];
+				puts("Standard YM2612.");
+				memcpy(song.channel_arrangement+song.channels, channel_arrangement_fm, sizeof(channel_arrangement_fm));
+				song.channels += 6;
+				
+				has_fm++;
+			}
+			else if (system == 0xa0)
+			{
+				if (has_fm)
+				{
+					puts("Extended YM2612 encountered, but the module already has FM.");
+					goto read_module_fail;
+				}
+				puts("Extended YM2612.");
+				memcpy(song.channel_arrangement+song.channels, channel_arrangement_fm_ext, sizeof(channel_arrangement_fm_ext));
+				song.channels += 9;
+				
+				has_fm++;
+			}
+			else if (system == 3)
+			{
+				if (has_psg)
+				{
+					puts("SMS encountered, but the module already has PSG.");
+					goto read_module_fail;
+				}
+				puts("SMS.");
+				memcpy(song.channel_arrangement+song.channels, channel_arrangement_psg, sizeof(channel_arrangement_psg));
+				song.channels += 4;
+				
+				has_psg++;
+			}
+			else if (system)
+			{
+				printf("Invalid/unsupported system type $%02X.\n",system);
+				goto read_module_fail;
 			}
 		}
-		if (!system)
+		if (!song.channels)
 		{
 			puts("Module has NO systems!");
 			goto read_module_fail;
 		}
-		switch (system)
-		{
-			case 0x02:
-				puts("Standard Genesis module.");
-				chn3_extd = 0;
-				break;
-			case 0x42:
-				puts("Extended CHN3 Genesis module.");
-				chn3_extd = 1;
-				break;
-			default:
-				printf("Invalid/unsupported system type $%02X.\n",system);
-				goto read_module_fail;
-		}
-		song.channels = chn3_extd ? 13 : 10;
+		printf("Module has %u channels.\n",song.channels);
 		
-		fr_skip(&fr, 32+32+32+(32*4)); /* we don't care about volume/panning/"props" */
+		fr_skip(&fr, 32+32+(32*4)); /* we don't care about volume/panning/"props" */
 		
 		/* module metadata/flags */
 		song_name = fr_read_str(&fr);
@@ -1563,18 +1722,18 @@ int read_module(char *filename)
 			fr_skip(&fr,8);
 			
 			unsigned chn = fr_read16u(&fr);
-			unsigned ord = fr_read16u(&fr);
+			unsigned chn_pati = fr_read16u(&fr);
 			if (chn >= song.channels)
 			{
 				printf("Invalid channel number %u.\n",chn);
 				goto read_module_fail;
 			}
-			if (song_pattern_map[chn][ord] != -1)
+			if (song_pattern_map[chn][chn_pati] != -1)
 			{
-				printf("Channel %u, order %u already has an assigned pattern.\n",chn,ord);
+				printf("Channel %u, pattern %u already has an assigned pattern.\n",chn,chn_pati);
 				goto read_module_fail;
 			}
-			song_pattern_map[chn][ord] = pati;
+			song_pattern_map[chn][chn_pati] = pati;
 			fr_skip(&fr,4);
 			
 			for (unsigned rown = 0; rown < pattern_size; rown++)
@@ -1582,7 +1741,9 @@ int read_module(char *filename)
 				unpacked_row_t *row = &unpacked_pattern_tbl[pati][rown];
 				
 				row->note = fr_read16s(&fr);
-				row->octave = fr_read16s(&fr);
+				/* furnace always writes 0 to the upper byte of octave regardless of its sign */
+				row->octave = fr_read8s(&fr);
+				fr_skip(&fr,1);
 				row->instrument = fr_read16s(&fr);
 				row->volume = fr_read16s(&fr);
 				for (unsigned i = 0; i < channel_effect_columns[chn]; i++)
@@ -1615,6 +1776,280 @@ int read_module(char *filename)
 	time_base = time_base ? time_base : 1;
 	song.speed1 = speed1 * time_base;
 	song.speed2 = speed2 * time_base;
+	
+	
+	/********** go through the orderlist, semi-compile all the patterns, and correct
+		the orderlist to reflect the actual pattern ids in the global module. */
+	puts("\nCompiling patterns...");
+	
+	global_pattern_map = malloc(module_patterns * sizeof(*global_pattern_map));
+	memset(global_pattern_map, -1, module_patterns * sizeof(*global_pattern_map));
+	
+	for (unsigned chn = 0; chn < song.channels; chn++)
+	{
+		for (unsigned ord = 0; ord < song.orders; ord++)
+		{
+			unsigned chn_pati = song.orderlist[chn][ord];
+			unsigned pati = song_pattern_map[chn][chn_pati];
+			if (pati == (unsigned)-1)
+			{
+				printf("Channel %u, order %u, pattern %u does not exist in the module.\n", chn,ord,chn_pati);
+				goto read_module_fail;
+			}
+			
+			if (global_pattern_map[pati] == -1)
+			{
+				/*
+					semi-compiled pattern bytecode:
+						for each row:
+							for each effect, rightmost same effect only, one of:
+								$d0-$ff $yy: effect code $xx-$d0, param $yy
+							if any instrument change:
+								$ce $xx: instrument $xx set
+								$cf $xx $yy: instrument $yyxx set
+							if any volume change:
+								$bf $xx: volume $xx set
+							for note column, either one of:
+								$a9: off
+								$a8: blank
+								$00-$a7: note (in semitones from C--5)
+							$xx row duration
+				*/
+				unpacked_row_t *src = unpacked_pattern_tbl[pati];
+				
+				size_t size = 0;
+				uint8_t out[1024];
+				
+				/* storage of effect parameters (we optimize useless commands out) */
+				int prv_ins = -1;
+				int ins_changed = 0;
+				short prv_eff[AMT_SUPPORTED_EFFECTS];
+				short cur_eff[AMT_SUPPORTED_EFFECTS];
+				memset(prv_eff,-1,sizeof(prv_eff));
+				
+				/* the conditions for resetting the duration and outputting the row are:
+					- new note event
+					- instrument change
+					- volume change
+					- change in parameter of a continuous effect
+					- any non-continuous effect
+					- end of pattern
+				*/
+				unsigned duration = 0;
+				for (unsigned rown = 0; rown < song.pattern_size; rown++)
+				{
+					/******* read the current row ********/
+					unpacked_row_t *row = &src[rown];
+					
+					/* note */
+					uint8_t note;
+					if (row->note == 100)
+					{
+						note = AMT_NOTES+1;
+					}
+					else if (!row->note)
+					{
+						note = AMT_NOTES;
+					}
+					else
+					{
+						int fullnote = row->note + (row->octave * 12) + (12*5);
+						if (fullnote < 0 || fullnote >= AMT_NOTES)
+						{
+							printf("Invalid note %i, octave %i, value %i at channel %u, order %u, row %u\n",
+								row->note, row->octave, fullnote,
+								chn,ord,rown);
+							goto read_module_fail;
+						}
+						note = fullnote;
+					}
+					
+					/* instrument */
+					if (row->instrument != -1 && row->instrument != prv_ins)
+					{
+						if (row->instrument < 0 || row->instrument >= MAX_INSTRUMENTS || song_instrument_map[row->instrument] == -1)
+						{
+							printf("Invalid instrument %i at channel %u, order %u, row %u\n", row->instrument, chn,ord,rown);
+							goto read_module_fail;
+						}
+						prv_ins = row->instrument;
+						ins_changed = 1;
+						
+						/* fm patch effects are invalidated by instrument changes */
+						prv_eff[EFF_TL1] = -1;
+						prv_eff[EFF_TL2] = -1;
+						prv_eff[EFF_TL3] = -1;
+						prv_eff[EFF_TL4] = -1;
+						prv_eff[EFF_MUL] = -1;
+						prv_eff[EFF_AR] = -1;
+						prv_eff[EFF_AR1] = -1;
+						prv_eff[EFF_AR2] = -1;
+						prv_eff[EFF_AR3] = -1;
+						prv_eff[EFF_AR4] = -1;
+					}
+					/* volume */
+					if (row->volume != -1)
+					{
+						if (row->volume < 0 || row->volume > 0x7f)
+						{
+							printf("Invalid volume %i at channel %u, order %u, row %u\n", row->volume, chn,ord,rown);
+							goto read_module_fail;
+						}
+					}
+					
+					/* effects. rightmost takes priority */
+					memset(cur_eff,-1,sizeof(cur_eff));
+					for (unsigned i = 0; i < MAX_EFFECT_COLUMNS; i++)
+					{
+						int c = row->effects[i].code;
+						int p = row->effects[i].param;
+						/* quietly ignore tremolo for now... */
+						if (c == -1 || p == -1 || c == 7) continue;
+						uint8_t *outp;
+						if (c < 0 || c > 0xff
+							|| p < 0 || p > 0xff
+							|| (c == 0x0d && p) /* Dxx with nonzero xx is not supported */
+							|| (c == 0x0b && p >= song.orders)
+							|| (outp = memchr(effect_map, c, sizeof(effect_map)))==0)
+						{
+							printf("Invalid/unsupported effect $%02X, param $%02X at channel %u, order %u, row %u, col %u\n",
+								c,p,
+								chn,ord,rown,i);
+							goto read_module_fail;
+						}
+						
+						uint8_t out = outp-effect_map;
+						
+						/* some "instant" effects have no effect if their parameter is 0 */
+						if (out == EFF_CUT && !p) continue;
+						if (out == EFF_DELAY && !p) continue;
+						if (out == EFF_RETRIG && !p) continue;
+						
+						if (out == EFF_SPEED1 && !p) continue;
+						if (out == EFF_SPEED2 && !p) continue;
+						
+						/* toneportamento has no effect if there is no note */
+						if (out == EFF_TONEPORTA && row->note==100) continue;
+						
+						/* some special exceptions: we only want ONE portamento */
+						if (out == EFF_PORTAUP || out == EFF_PORTADOWN || out == EFF_TONEPORTA || out == EFF_NOTEUP || out == EFF_NOTEDOWN)
+						{
+							cur_eff[EFF_PORTAUP] = -1;
+							cur_eff[EFF_PORTADOWN] = -1;
+							cur_eff[EFF_TONEPORTA] = -1;
+							cur_eff[EFF_NOTEUP] = -1;
+							cur_eff[EFF_NOTEDOWN] = -1;
+						}
+						
+						cur_eff[out] = p;
+					}
+					
+					
+					/***** output row bytecode ******/
+					uint8_t ro[64];
+					unsigned ros = 0;
+					
+					/* allow each individual effect to decide if it should be roput */
+					for (int c = AMT_SUPPORTED_EFFECTS-1; c >= 0; c--)
+					{
+						if (cur_eff[c] == -1) continue;
+						uint8_t p = cur_eff[c];
+						uint8_t oc = c + 0xd0;
+						
+						switch (c)
+						{
+							/* regular "continuous" effects, only output if the parameter was different */
+							case EFF_ARP:
+							case EFF_VIBRATO:
+							case EFF_VOLSLIDE:
+							case EFF_ARPTICK:
+							case EFF_VIBMODE:
+							case EFF_VIBDEPTH:
+							case EFF_FINETUNE:
+							case EFF_LEGATO:
+							case EFF_SMPLBANK:
+							case EFF_DAC:
+								if (p != prv_eff[c])
+								{
+									ro[ros++] = oc;
+									ro[ros++] = p;
+									
+									prv_eff[c] = p;
+								}
+								break;
+							/* standard effect, just unconditionally place it */
+							default:
+								ro[ros++] = oc;
+								ro[ros++] = p;
+								break;
+						}
+					}
+					
+					/* instrument */
+					if (ins_changed)
+					{
+						int actual = song_instrument_map[row->instrument];
+						instrument_histogram[actual]++;
+						
+						if (actual < 0x100)
+						{
+							ro[ros++] = 0xce;
+							ro[ros++] = actual;
+						}
+						else
+						{
+							ro[ros++] = 0xcf;
+							ro[ros++] = actual & 0xff;
+							ro[ros++] = actual >> 8;
+						}
+						
+						ins_changed = 0;
+					}
+					
+					/* volume */
+					if (row->volume != -1)
+					{
+						ro[ros++] = 0xbf;
+						ro[ros++] = row->volume;
+					}
+					
+					/* note */
+					ro[ros++] = note;
+					
+					/*** ok, now see if we should actually output a new row to the pattern ***/
+					int new_row = ros != 1 || ro[0] != AMT_NOTES+1;
+					
+					if (new_row || !rown)
+					{
+						/* if so, output the old duration, but NOT on the first row */
+						if (rown)
+							out[size++] = duration;
+						
+						/* actually write it */
+						memcpy(out+size, ro, ros);
+						size += ros;
+						
+						/* reset duration counting */
+						duration = 0;
+					}
+					duration++;
+				}
+				
+				/* write out the last duration */
+				out[size++] = duration;
+				
+				
+				pattern_t patt;
+				patt.size = size;
+				patt.data_index = add_data(out,size);
+				global_pattern_map[pati] = add_pattern(&patt);
+			}
+			
+			song.orderlist[chn][ord] = global_pattern_map[pati];
+		}
+	}
+	
+	
 	
 	
 	
@@ -1650,6 +2085,7 @@ read_module_cleanup:
 	if (f) fclose(f);
 	free(fbuf);
 	free(unpacked_pattern_tbl);
+	free(global_pattern_map);
 	
 	for (int i = 0; i < 79; i++) putchar ('-');
 	putchar ('\n');
@@ -1672,6 +2108,8 @@ int main(int argc, char *argv[])
 		);
 		return EXIT_FAILURE;
 	}
+	
+	memset(instrument_histogram,0,sizeof(instrument_histogram));
 	
 	for (int i = 1; i < argc; i++)
 		read_module(argv[i]);

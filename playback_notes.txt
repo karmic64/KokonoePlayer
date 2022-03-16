@@ -41,7 +41,7 @@ With volume slides, 4 is the base speed that adds 1 to the volume every tick. 8 
 Any parameter with both nybbles nonzero is functionally equivalent to 0. This appears to not be the case in Furnace but I can't figure out the logic.
 
 
-Tremolo is bizarre and buggy and not worth looking into.
+Tremolo is bizarre and buggy and not worth looking into. Furnace doesn't even support it.
 
 
 
@@ -106,11 +106,49 @@ It works as expected in Furnace.
 
 
 
+--- FM Patch Effects ---
+
+There are a lot of 1xyy effects that change the current FM patch's parameters. These effects apply themselves until an instrument change, that is, when the instrument number of the next note is different from the current one.
+
+In Furnace, the patch changing effects have no effect if a macro is currently actively changing the parameter.
+
+
+
+--- DAC output ---
+
+Channel 6 has a special mode that allows it to play samples. This is enabled/disabled with the 17xx effect. Here are some behaviors of the effect:
+- When a 1701 effect is encountered with no sample, the channel is set in DAC mode and outputs silence.
+- When a 1700 effect is encountered, the FM output is allowed again.
+- When a sample ends, the FM output is allowed again until the next sample start.
+- Any nonzero parameter counts as 01.
+
+
+
+--- Ext. CHN3 Mode ---
+
+Channel 3 has a special mode that allows each operator to have its own frequency, and all operator's key-offs can be individually controlled. In Ext CHN3 mode, this is facilitated by separating channel 3 into 4 channels, one for each operator.
+
+When this mode is active, instruments are still 4-op, but only the relevant operator of the op-channel's instrument actually affects the op-channel's output.
+
+Channel-wide FM parameters are controlled by the rightmost op-channel. At first, the control is held by none of the op-channels. But when a new note occurs on a op-channel, it takes control, UNLESS there was a new note already on a more-right op-channel. Take a pattern like this:
+OP1 | OP2 | OP3 | OP4
+C-4 | --- | --- | ---
+--- | C-4 | --- | ---
+C-4 | --- | --- | ---
+--- | --- | --- | C-4
+----| --- | C-4 | ---
+--- | C-4 | --- | ---
+C-4 | --- | --- | ---
+On the first rows, operator 1 takes control, then 2. On the next row, control stays on OP2, because OP1 is to the left.
+On the next row operator 4 takes control. And it will have control forever, because there isn't any more-right op-channel.
+
+The exception is when there is an effect modifying one of the global parameters. The effect takes priority until the in-control op-channel changes its instrument.
+
+
+
+
 
 --- Other Effects ---
-
-
-
 
 
 The description of Cxx (retrig) is absolutely WRONG. The correct behavior is: retrigger the note every xxth tick on the current row, not counting the first.
