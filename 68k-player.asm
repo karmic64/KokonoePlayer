@@ -60,3 +60,6 @@ sound_reset::
 z80_blob:
 	incbin "z80-player.bin"
 z80_blob_end:
+
+
+	include "COMPILED-MODULE.asm"

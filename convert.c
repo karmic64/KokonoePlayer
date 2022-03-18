@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <limits.h>
+#include <time.h>
 #include <sys/stat.h>
 
 #include <zlib.h>
@@ -308,6 +309,16 @@ typedef unpacked_row_t unpacked_pattern_t[MAX_ROWS];
 typedef struct {
 	unsigned size;
 	unsigned data_index;
+	
+	/*
+		value calculated so that the majority of the note values
+		in the pattern are in the range [base_note..base_note+$1c]
+	*/
+	uint8_t base_note;
+	
+	/* the (max 4) most used row durations in the pattern */
+	uint8_t top_durations;
+	uint8_t top_duration_tbl[4];
 } pattern_t;
 
 
@@ -450,8 +461,6 @@ pattern_t *pattern_tbl = NULL;
 unsigned instruments = 0;
 unsigned instrument_max = 0;
 instrument_t *instrument_tbl = NULL;
-/* keeps a count of instrument switches so we can sort by most used */
-uintmax_t *instrument_histogram[0x1000];
 
 /* macros in the module */
 unsigned macros = 0;
@@ -472,6 +481,26 @@ sample_t *sample_tbl = NULL;
 unsigned sample_maps = 0;
 unsigned sample_map_max = 0;
 sample_map_t *sample_map_tbl = NULL;
+
+
+
+
+typedef struct {
+	unsigned id;
+	uintmax_t count;
+} histogram_ent_t;
+
+int histogram_cmp_desc(const void *a, const void *b)
+{
+	uintmax_t ac = ((histogram_ent_t*)a)->count;
+	uintmax_t bc = ((histogram_ent_t*)b)->count;
+	
+	/* this comparison is inverted to sort descending */
+	return (ac < bc) - (ac > bc);
+}
+
+/* keeps a count of instrument switches so we can sort by most used */
+histogram_ent_t instrument_histogram[0x1000];
 
 
 
@@ -1820,6 +1849,21 @@ int read_module(char *filename)
 				size_t size = 0;
 				uint8_t out[1024];
 				
+				/* for keeping count of duration/note usage */
+				histogram_ent_t duration_histogram[MAX_ROWS];
+				histogram_ent_t note_histogram[AMT_NOTES];
+				
+				for (unsigned i = 0; i < MAX_ROWS; i++)
+				{
+					duration_histogram[i].id = i+1;
+					duration_histogram[i].count = 0;
+				}
+				for (unsigned i = 0; i < AMT_NOTES; i++)
+				{
+					note_histogram[i].id = i;
+					note_histogram[i].count = 0;
+				}
+				
 				/* storage of effect parameters (we optimize useless commands out) */
 				int prv_ins = -1;
 				int ins_changed = 0;
@@ -1989,7 +2033,7 @@ int read_module(char *filename)
 					if (ins_changed)
 					{
 						int actual = song_instrument_map[row->instrument];
-						instrument_histogram[actual]++;
+						instrument_histogram[actual].count++;
 						
 						if (actual < 0x100)
 						{
@@ -2015,6 +2059,8 @@ int read_module(char *filename)
 					
 					/* note */
 					ro[ros++] = note;
+					if (note < AMT_NOTES)
+						note_histogram[note].count++;
 					
 					/*** ok, now see if we should actually output a new row to the pattern ***/
 					int new_row = ros != 1 || ro[0] != AMT_NOTES+1;
@@ -2023,7 +2069,10 @@ int read_module(char *filename)
 					{
 						/* if so, output the old duration, but NOT on the first row */
 						if (rown)
+						{
 							out[size++] = duration;
+							duration_histogram[duration-1].count++;
+						}
 						
 						/* actually write it */
 						memcpy(out+size, ro, ros);
@@ -2037,11 +2086,46 @@ int read_module(char *filename)
 				
 				/* write out the last duration */
 				out[size++] = duration;
+				duration_histogram[duration-1].count++;
 				
 				
+				/**** create the pattern object ****/
 				pattern_t patt;
 				patt.size = size;
 				patt.data_index = add_data(out,size);
+				
+				
+				/**** find the optimal base note ****/
+				uint8_t best_base_note = -1;
+				uintmax_t best_base_count = 0;
+				for (unsigned b = 0; b < AMT_NOTES-0x1c; b++)
+				{
+					uintmax_t total = 0;
+					for (unsigned i = 0; i <= 0x1c; i++)
+						total += note_histogram[b+i].count;
+					
+					if (total > best_base_count)
+					{
+						best_base_note = b;
+						best_base_count = total;
+					}
+				}
+				patt.base_note = best_base_note;
+				
+				
+				/**** find the 4 most used durations ****/
+				qsort(duration_histogram, MAX_ROWS, sizeof(*duration_histogram), histogram_cmp_desc);
+				patt.top_durations = 0;
+				for (unsigned i = 0; i < MAX_ROWS && patt.top_durations < 4; i++)
+				{
+					unsigned id = duration_histogram[i].id;
+					unsigned c = duration_histogram[i].count;
+					if (!c) break;
+					patt.top_duration_tbl[patt.top_durations++] = id;
+				}
+				
+				
+				/**** add pattern to the table ****/
 				global_pattern_map[pati] = add_pattern(&patt);
 			}
 			
@@ -2109,7 +2193,12 @@ int main(int argc, char *argv[])
 		return EXIT_FAILURE;
 	}
 	
-	memset(instrument_histogram,0,sizeof(instrument_histogram));
+	/******** read modules ***********/
+	for (unsigned i = 0; i < 0x1000; i++)
+	{
+		instrument_histogram[i].id = i;
+		instrument_histogram[i].count = 0;
+	}
 	
 	for (int i = 1; i < argc; i++)
 		read_module(argv[i]);
@@ -2126,8 +2215,76 @@ int main(int argc, char *argv[])
 	printf("Module has %u unique macro%c.\n", macros, macros == 1 ? '\0' : 's');
 	printf("Module has %u unique FM patch%s.\n", fm_patches, fm_patches == 1 ? "" : "es");
 	printf("Module has %u unique sample%c.\n", samples, samples == 1 ? '\0' : 's');
-	putchar('\n');
 	
+	
+	
+	/******** generate duration table *******/
+	typedef uint8_t duration_tbl_ent[4];
+	
+	
+	
+	
+	/******** re-sort instruments by use count ********/
+	qsort(instrument_histogram, instruments, sizeof(*instrument_histogram), histogram_cmp_desc);
+	unsigned instrument_map[0x1000];
+	for (unsigned i = 0; i < instruments; i++)
+		instrument_map[instrument_histogram[i].id] = i;
+	
+	
+	/******** write output file *********/
+	time_t outtime;
+	time(&outtime);
+	puts("\nWriting output data...");
+	FILE *f = fopen("COMPILED-MODULE.asm", "w");
+	if (!f)
+	{
+		printf("Can't open for writing: %s\n",strerror(errno));
+		return EXIT_FAILURE;
+	}
+	
+	fprintf(f,
+		";\n"
+		"; This file was generated on %s"
+		";\n"
+		"\n", 
+			ctime(&outtime));
+	
+	/* song table */
+	fprintf(f,
+		"; Song headers.\n"
+		"kn_song_tbl: dl "
+		);
+	for (unsigned i = 0; i < songs; i++)
+		fprintf(f,"kn_song_%u%c", i, (i < songs-1)?',':'\n');
+	
+	/* song headers */
+	for (unsigned i = 0; i < songs; i++)
+	{
+		song_t *s = &song_tbl[i];
+		
+		fprintf(f,"kn_song_%u: db %u,%u,%u,0\n", i, s->speed1,s->speed2,s->pattern_size);
+		fprintf(f,
+			" db %u,%u\n"
+			" db "
+				, s->channels,s->orders);
+		for (unsigned j = 0; j < s->channels; j++)
+			fprintf(f,"%u%c", s->channel_arrangement[j], (j < s->channels-1)?',':'\n');
+		
+		fprintf(f," align 1\n");
+		for (unsigned j = 0; j < s->channels; j++)
+		{
+			fprintf(f," dl ");
+			for (unsigned k = 0; k < s->orders; k++)
+				fprintf(f,"kn_pat_%u%c", s->orderlist[j][k], (k < s->orders-1)?',':'\n');
+		}
+	}
+	
+	
+	
+	
+	
+	fclose(f);
+	puts("Success.");
 	
 	return EXIT_SUCCESS;
 }
