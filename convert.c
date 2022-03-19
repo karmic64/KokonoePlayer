@@ -1170,10 +1170,17 @@ int read_module(char *filename)
 			uint8_t *sample_base = fr_ptr(&fr);
 			for (unsigned i = 0; i < size; i++)
 			{
+				int s = fr_read16s(&fr);
+				/*
+					for now we DON'T support sample amp, because having all those duplicates
+					severely bloats the output file. it might be possible to do software-amp
+					on the Z80 instead.
+				*/
+				/*
 				int s = fr_read16s(&fr) * (amp / 50.0);
-				/* clip properly */
 				if (s < -0x7fff) s = -0x7fff;
 				else if (s > 0x7fff) s = 0x7fff;
+				*/
 				sample_base[i] = (s>>8) + 128;
 			}
 			smp.data_index = add_data(sample_base,size);
@@ -1415,10 +1422,16 @@ int read_module(char *filename)
 					s = fr_read16s(&fr);
 				if (version < 58)
 				{
+					/*
+						for now we DON'T support sample amp, because having all those duplicates
+						severely bloats the output file. it might be possible to do software-amp
+						on the Z80 instead.
+					*/
+					/*
 					s *= (volume / 50.0);
-					/* clip properly */
 					if (s < -0x7fff) s = -0x7fff;
 					else if (s > 0x7fff) s = 0x7fff;
+					*/
 				}
 
 				
