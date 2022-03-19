@@ -1869,6 +1869,7 @@ int read_module(char *filename)
 				/* storage of effect parameters (we optimize useless commands out) */
 				int prv_ins = -1;
 				int ins_changed = 0;
+				unsigned prv_dur = -1;
 				short prv_eff[AMT_SUPPORTED_EFFECTS];
 				short cur_eff[AMT_SUPPORTED_EFFECTS];
 				memset(prv_eff,-1,sizeof(prv_eff));
@@ -1949,8 +1950,7 @@ int read_module(char *filename)
 					{
 						int c = row->effects[i].code;
 						int p = row->effects[i].param;
-						/* quietly ignore tremolo for now... */
-						if (c == -1 || p == -1 || c == 7) continue;
+						if (c == -1 || p == -1) continue;
 						uint8_t *outp;
 						if (c < 0 || c > 0xff
 							|| p < 0 || p > 0xff
@@ -1958,10 +1958,10 @@ int read_module(char *filename)
 							|| (c == 0x0b && p >= song.orders)
 							|| (outp = memchr(effect_map, c, sizeof(effect_map)))==0)
 						{
-							printf("Invalid/unsupported effect $%02X, param $%02X at channel %u, order %u, row %u, col %u\n",
+							printf("WARNING: Ignoring invalid/unsupported effect $%02X, param $%02X at channel %u, order %u, row %u, col %u\n",
 								c,p,
 								chn,ord,rown,i);
-							goto read_module_fail;
+							/* goto read_module_fail; */
 						}
 						
 						uint8_t out = outp-effect_map;
@@ -2073,7 +2073,12 @@ int read_module(char *filename)
 						if (rown)
 						{
 							out[size++] = duration;
-							patt.duration_histogram[duration-1].count++;
+							if (duration != prv_dur)
+							{
+								/* only count duration CHANGES, because that's the actual bottleneck */
+								patt.duration_histogram[duration-1].count++;
+								prv_dur = duration;
+							}
 						}
 						
 						/* actually write it */
@@ -2088,7 +2093,12 @@ int read_module(char *filename)
 				
 				/* write out the last duration */
 				out[size++] = duration;
-				patt.duration_histogram[duration-1].count++;
+				if (duration != prv_dur)
+				{
+					/* only count duration CHANGES, because that's the actual bottleneck */
+					patt.duration_histogram[duration-1].count++;
+					prv_dur = duration;
+				}
 				
 				
 				/**** add the pattern data to the pattern object ****/
@@ -2119,7 +2129,6 @@ int read_module(char *filename)
 				patt.top_durations = 0;
 				for (unsigned i = 0; i < MAX_ROWS; i++)
 				{
-					unsigned id = patt.duration_histogram[i].id;
 					unsigned c = patt.duration_histogram[i].count;
 					if (!c) break;
 					patt.top_durations++;
@@ -2347,24 +2356,138 @@ int main(int argc, char *argv[])
 			" db "
 				, s->channels,s->orders);
 		for (unsigned j = 0; j < s->channels; j++)
-			fprintf(f,"%u%c", s->channel_arrangement[j], (j < s->channels-1)?',':'\n');
+			fprintf(f,"%u%c", s->channel_arrangement[j], (j < (unsigned)s->channels-1)?',':'\n');
 		
 		fprintf(f," align 1\n");
 		for (unsigned j = 0; j < s->channels; j++)
 		{
 			fprintf(f," dl ");
 			for (unsigned k = 0; k < s->orders; k++)
-				fprintf(f,"kn_pat_%u%c", s->orderlist[j][k], (k < s->orders-1)?',':'\n');
+				fprintf(f,"kn_pat_%u%c", s->orderlist[j][k], (k < (unsigned)s->orders-1)?',':'\n');
 		}
 	}
 	fputc('\n', f);
 	
 	/* patterns */
-	fprintf(f,"; Patterns.");
+	fprintf(f,"; Patterns.\n");
 	for (unsigned i = 0; i < patterns; i++)
 	{
+		pattern_t *p = &pattern_tbl[i];
 		unsigned duration = duration_usage_map[duration_pattern_map[i]];
 		/* if the duration index won't fit in a byte, just find the best substitute */
+		if (duration >= 256)
+		{
+			histogram_ent_t *pt = p->duration_histogram;
+			
+			unsigned best_duration = 0;
+			unsigned best_duration_match = 0;
+			
+			for (unsigned j = 0; j < 256; j++)
+			{
+				unsigned match = 0;
+				duration_ent_t *d = &duration_tbl[duration_usage_map[j]];
+				
+				for (unsigned k = 0; k < d->count; k++)
+				{
+					for (unsigned l = 0; l < MAX_ROWS; l++)
+					{
+						if (pt[l].id == d->tbl[k])
+						{
+							match += pt[l].count;
+							break;
+						}
+					}
+				}
+				
+				if (match > best_duration_match)
+				{
+					best_duration = j;
+					best_duration_match = match;
+				}
+			}
+			duration = best_duration;
+		}
+		
+		/* now actually write the data */
+		fprintf(f, "kn_pat_%u: db %u,%u\n db ", i, p->base_note,duration);
+		
+		duration_ent_t *d = &duration_tbl[duration_histogram[duration].id];
+		int prv_long_dur = -1;
+		
+		uint8_t *pd = databuf+(p->data_index);
+		unsigned ps = p->size;
+		unsigned pi = 0;
+		while (pi < ps)
+		{
+			uint8_t c = pd[pi++];
+			
+			if (c >= 0xd0) /* effect */
+			{
+				fprintf(f,"$%02X,$%02X, ",c,pd[pi++]);
+			}
+			else if (c == 0xce || c == 0xcf) /* instrument */
+			{
+				unsigned icode = pd[pi++];
+				if (c == 0xcf) icode |= (pd[pi++] << 8);
+				icode = instrument_map[icode];
+				
+				if (icode > 0xff)
+					fprintf(f,"$cf,$%02X,$%02X, ",(icode>>8),(icode&0xff));
+				else
+					fprintf(f,"$ce,$%02X, ",icode);
+			}
+			else if (c == 0xbf) /* volume */
+			{
+				fprintf(f,"$cd,$%02X, ", pd[pi++]);
+			}
+			else /* note */
+			{
+				/* get duration mask */
+				unsigned dur = pd[pi++];
+				int di = -1;
+				for (unsigned i = 0; i < d->count; i++)
+				{
+					if (d->tbl[i] == dur)
+					{
+						di = i * 0x20;
+						break;
+					}
+				}
+				if (di == -1)
+				{
+					if (dur == prv_long_dur)
+					{
+						di = 0xa0;
+					}
+					else
+					{
+						prv_long_dur = dur;
+						di = 0x80;
+					}
+				}
+				
+				/* get note offset */
+				int no = -1;
+				if (c == AMT_NOTES) /* blank */
+					no = 0x1f;
+				else if (c == AMT_NOTES+1) /* noteoff */
+					no = 0x1e;
+				else
+				{
+					no = c - p->base_note;
+					if (no < 0 || no >= 0x1d)
+						no = 0x1d;
+				}
+				
+				/* output */
+				fprintf(f,"$%02X,",di | no);
+				if (di == 0x80) fprintf(f,"$%02X,",dur);
+				if (no == 0x1d) fprintf(f,"$%02X,",c);
+				
+				fputc(' ',f);
+			}
+		}
+		fprintf(f,"$ff\n");
 	}
 	
 	
