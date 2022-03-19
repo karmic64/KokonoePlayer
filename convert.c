@@ -144,6 +144,22 @@ char *fr_read_str (fake_reader_t *fr)
 
 
 
+/****** histogram *******/
+
+typedef struct {
+	unsigned id;
+	uintmax_t count;
+} histogram_ent_t;
+
+int histogram_cmp_desc(const void *a, const void *b)
+{
+	uintmax_t ac = ((histogram_ent_t*)a)->count;
+	uintmax_t bc = ((histogram_ent_t*)b)->count;
+	
+	/* this comparison is inverted to sort descending */
+	return (ac < bc) - (ac > bc);
+}
+
 
 
 
@@ -316,9 +332,8 @@ typedef struct {
 	*/
 	uint8_t base_note;
 	
-	/* the (max 4) most used row durations in the pattern */
-	uint8_t top_durations;
-	uint8_t top_duration_tbl[4];
+	uint8_t top_durations; /* amount of non-zero entries in the duration histogram */
+	histogram_ent_t duration_histogram[MAX_ROWS];
 } pattern_t;
 
 
@@ -484,20 +499,6 @@ sample_map_t *sample_map_tbl = NULL;
 
 
 
-
-typedef struct {
-	unsigned id;
-	uintmax_t count;
-} histogram_ent_t;
-
-int histogram_cmp_desc(const void *a, const void *b)
-{
-	uintmax_t ac = ((histogram_ent_t*)a)->count;
-	uintmax_t bc = ((histogram_ent_t*)b)->count;
-	
-	/* this comparison is inverted to sort descending */
-	return (ac < bc) - (ac > bc);
-}
 
 /* keeps a count of instrument switches so we can sort by most used */
 histogram_ent_t instrument_histogram[0x1000];
@@ -1849,14 +1850,15 @@ int read_module(char *filename)
 				size_t size = 0;
 				uint8_t out[1024];
 				
+				pattern_t patt;
+				
 				/* for keeping count of duration/note usage */
-				histogram_ent_t duration_histogram[MAX_ROWS];
 				histogram_ent_t note_histogram[AMT_NOTES];
 				
 				for (unsigned i = 0; i < MAX_ROWS; i++)
 				{
-					duration_histogram[i].id = i+1;
-					duration_histogram[i].count = 0;
+					patt.duration_histogram[i].id = i+1;
+					patt.duration_histogram[i].count = 0;
 				}
 				for (unsigned i = 0; i < AMT_NOTES; i++)
 				{
@@ -2071,7 +2073,7 @@ int read_module(char *filename)
 						if (rown)
 						{
 							out[size++] = duration;
-							duration_histogram[duration-1].count++;
+							patt.duration_histogram[duration-1].count++;
 						}
 						
 						/* actually write it */
@@ -2086,11 +2088,10 @@ int read_module(char *filename)
 				
 				/* write out the last duration */
 				out[size++] = duration;
-				duration_histogram[duration-1].count++;
+				patt.duration_histogram[duration-1].count++;
 				
 				
-				/**** create the pattern object ****/
-				pattern_t patt;
+				/**** add the pattern data to the pattern object ****/
 				patt.size = size;
 				patt.data_index = add_data(out,size);
 				
@@ -2114,14 +2115,14 @@ int read_module(char *filename)
 				
 				
 				/**** find the 4 most used durations ****/
-				qsort(duration_histogram, MAX_ROWS, sizeof(*duration_histogram), histogram_cmp_desc);
+				qsort(patt.duration_histogram, MAX_ROWS, sizeof(*patt.duration_histogram), histogram_cmp_desc);
 				patt.top_durations = 0;
-				for (unsigned i = 0; i < MAX_ROWS && patt.top_durations < 4; i++)
+				for (unsigned i = 0; i < MAX_ROWS; i++)
 				{
-					unsigned id = duration_histogram[i].id;
-					unsigned c = duration_histogram[i].count;
+					unsigned id = patt.duration_histogram[i].id;
+					unsigned c = patt.duration_histogram[i].count;
 					if (!c) break;
-					patt.top_duration_tbl[patt.top_durations++] = id;
+					patt.top_durations++;
 				}
 				
 				
@@ -2248,8 +2249,9 @@ int main(int argc, char *argv[])
 		for (unsigned i = 0; i < patterns; i++)
 		{
 			uint8_t pc = pattern_tbl[i].top_durations;
+			if (pc > 4) pc = 4;
 			if (pc != count) continue;
-			uint8_t *pt = pattern_tbl[i].top_duration_tbl;
+			histogram_ent_t *pt = pattern_tbl[i].duration_histogram;
 			
 			/* hunt for any matching duration lists already in the table */
 			unsigned j = 0;
@@ -2261,7 +2263,7 @@ int main(int argc, char *argv[])
 				unsigned matches = 0;
 				for (unsigned k = 0; k < pc; k++)
 				{
-					if (memchr(dt, pt[k], dc)) matches++;
+					if (memchr(dt, pt[k].id, dc)) matches++;
 				}
 				if (matches >= pc) break;
 			}
@@ -2270,7 +2272,8 @@ int main(int argc, char *argv[])
 			if (j == durations)
 			{
 				duration_tbl[j].count = pc;
-				memcpy(duration_tbl[j].tbl, pt, pc);
+				for (unsigned i = 0; i < pc; i++)
+					duration_tbl[j].tbl[i] = pt[i].id;
 				durations++;
 			}
 			
@@ -2353,6 +2356,15 @@ int main(int argc, char *argv[])
 			for (unsigned k = 0; k < s->orders; k++)
 				fprintf(f,"kn_pat_%u%c", s->orderlist[j][k], (k < s->orders-1)?',':'\n');
 		}
+	}
+	fputc('\n', f);
+	
+	/* patterns */
+	fprintf(f,"; Patterns.");
+	for (unsigned i = 0; i < patterns; i++)
+	{
+		unsigned duration = duration_usage_map[duration_pattern_map[i]];
+		/* if the duration index won't fit in a byte, just find the best substitute */
 	}
 	
 	
