@@ -2516,6 +2516,90 @@ int main(int argc, char *argv[])
 	}
 	fputc('\n', f);
 	
+	/* instruments */
+	fprintf(f,
+		"; Instruments.\n"
+		" align 1\n"
+		"kn_instrument_tbl: dl ");
+	for (unsigned i = 0; i < instruments; i++)
+		fprintf(f,"kn_ins_%u%c", instrument_map[i], (i < instruments-1)?',':'\n');
+	
+	unsigned macro_slots = 0;
+	for (unsigned i = 0; i < instruments; i++)
+	{
+		instrument_t *ins = &instrument_tbl[i];
+		fprintf(f,
+			"kn_ins_%u: db %u,%u\n"
+				,i, ins->type, ins->macros);
+		if (ins->macros)
+		{
+			fprintf(f, " dl ");
+			for (unsigned j = 0; j < ins->macros; j++)
+				fprintf(f,"kn_mac_%u%c", ins->macro_ids[j], (j < (unsigned)ins->macros-1)?',':'\n');
+		}
+		if (ins->type != INSTR_TYPE_PSG) fprintf(f," dw %u\n", ins->extra_id);
+		if (ins->macros > macro_slots) macro_slots = ins->macros;
+	}
+	fprintf(f,"MACRO_SLOTS = %u\n", macro_slots);
+	fputc('\n', f);
+	
+	/* macros */
+	fprintf(f,
+		"; Macros.\n");
+	for (unsigned i = 0; i < macros; i++)
+	{
+		macro_t *m = &macro_tbl[i];
+		fprintf(f,
+			"kn_mac_%u: db %u,%u,%u,%u\n"
+			" db ",
+				i, m->type,m->length,m->loop,m->release);
+		
+		uint8_t *md = databuf+(m->data_index);
+		for (int j = 0; j < m->length; j++)
+			fprintf(f,"%u%c", md[j], (j < m->length-1)?',':'\n');
+	}
+	fputc('\n', f);
+	
+	/* fm patches */
+	fprintf(f,
+		"; FM patches.\n"
+		" align 1\n"
+		"kn_fm_tbl: "
+		);
+	if (fm_patches)
+	{
+		fprintf(f, " dl ");
+		for (unsigned i = 0; i < fm_patches; i++)
+			fprintf(f,"kn_fm_%u%c", i, (i < fm_patches-1)?',':'\n');
+		
+		for (unsigned i = 0; i < fm_patches; i++)
+		{
+			fm_patch_t *p = &fm_patch_tbl[i];
+			
+			fprintf(f,
+				"kn_fm_%u: db ",i);
+			
+			for (unsigned op = 0; op < 4; op++)
+			{
+				fprintf(f,
+					"$%02X,$%02X,$%02X,$%02X,$%02X,$%02X,$%02X, "
+					,p->reg30[op]
+					,p->reg40[op]
+					,p->reg50[op]
+					,p->reg60[op]
+					,p->reg70[op]
+					,p->reg80[op]
+					,p->reg90[op]
+					);
+			}
+			
+			fprintf(f,
+				"$%02X,$%02X\n"
+				,p->regb0,p->regb4);
+		}
+	}
+	fputc('\n', f);
+	
 	/* samples */
 	fprintf(f,
 		" align 1\n"
@@ -2524,7 +2608,7 @@ int main(int argc, char *argv[])
 	{
 		fprintf(f, " dl ");
 		for (unsigned i = 0; i < samples; i++)
-		fprintf(f,"kn_smpl_%u%c", i, (i < samples-1)?',':'\n');
+			fprintf(f,"kn_smpl_%u%c", i, (i < samples-1)?',':'\n');
 		
 		for (unsigned i = 0; i < samples; i++)
 		{
