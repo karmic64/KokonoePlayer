@@ -9,6 +9,9 @@ CFLAGS := -s -Ofast -Wall -Wextra
 LIBS := -lz
 
 
+MODS_DIR := mods
+
+
 
 .PHONY: default library test-rom
 
@@ -27,8 +30,8 @@ test-rom: test-rom.gen
 	$(CC) $(CFLAGS) -o $@ $< $(LIBS)
 
 
-COMPILED-MODULE.asm: convert$(DOTEXE) mods/*
-	./convert$(DOTEXE) mods/*
+COMPILED-MODULE.asm: convert$(DOTEXE) $(MODS_DIR)/*
+	./convert$(DOTEXE) $(MODS_DIR)/*
 
 
 

@@ -1,10 +1,13 @@
 private-mods
 
 
-convert.exe
 convert
 
 
+COMPILED-MODULE.asm
+
+
+*.exe
 *.o
 *.elf
 *.bin

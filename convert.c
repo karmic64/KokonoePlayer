@@ -207,7 +207,7 @@ typedef struct {
 	uint8_t orders;
 	uint8_t channels;
 	
-	uint8_t pattern_size; /* minus 1! */
+	uint16_t pattern_size;
 	
 	/* time base is supported by directly multiplying any speed settings */
 	uint8_t speed1;
@@ -1798,7 +1798,7 @@ int read_module(char *filename)
 	fbuf = NULL;
 	
 	printf("Song size: %u orders, pattern size: %u rows\n", orders, pattern_size);
-	song.pattern_size = pattern_size-1;
+	song.pattern_size = pattern_size;
 	song.orders = orders;
 	
 	printf("Time base %i, speeds %u/%u\n", time_base, speed1, speed2);
@@ -1993,7 +1993,7 @@ int read_module(char *filename)
 					uint8_t ro[64];
 					unsigned ros = 0;
 					
-					/* allow each individual effect to decide if it should be roput */
+					/* allow each individual effect to decide if it should be output */
 					for (int c = AMT_SUPPORTED_EFFECTS-1; c >= 0; c--)
 					{
 						if (cur_eff[c] == -1) continue;
@@ -2063,7 +2063,7 @@ int read_module(char *filename)
 						note_histogram[note].count++;
 					
 					/*** ok, now see if we should actually output a new row to the pattern ***/
-					int new_row = ros != 1 || ro[0] != AMT_NOTES+1;
+					int new_row = ros != 1 || ro[0] != AMT_NOTES;
 					
 					if (new_row || !rown)
 					{
@@ -2219,7 +2219,71 @@ int main(int argc, char *argv[])
 	
 	
 	/******** generate duration table *******/
-	typedef uint8_t duration_tbl_ent[4];
+	typedef struct {
+		uint8_t count;
+		uint8_t tbl[4];
+	} duration_ent_t;
+	
+	duration_ent_t *duration_tbl = malloc(patterns * sizeof(*duration_tbl));
+	histogram_ent_t *duration_histogram = malloc(patterns * sizeof(*duration_histogram));
+	unsigned *duration_pattern_map = malloc(patterns * sizeof(*duration_pattern_map));
+	
+	memset(duration_tbl, 0, patterns * sizeof(*duration_tbl));
+	for (unsigned i = 0; i < patterns; i++)
+	{
+		duration_histogram[i].id = i;
+		duration_histogram[i].count = 0;
+	}
+	memset(duration_pattern_map, -1, patterns * sizeof(*duration_pattern_map));
+	
+	/*
+		go through the patterns' top 4 durations and add them to the duration table.
+		if the durations are already "encompassed" by another, it will just be re-assigned
+		
+		sort by top duration count descending to make the duplicate detection better
+	*/
+	unsigned durations = 0;
+	for (unsigned count = 4; count > 0; count--)
+	{
+		for (unsigned i = 0; i < patterns; i++)
+		{
+			uint8_t pc = pattern_tbl[i].top_durations;
+			if (pc != count) continue;
+			uint8_t *pt = pattern_tbl[i].top_duration_tbl;
+			
+			/* hunt for any matching duration lists already in the table */
+			unsigned j = 0;
+			for ( ; j < durations; j++)
+			{
+				uint8_t dc = duration_tbl[j].count;
+				uint8_t *dt = duration_tbl[j].tbl;
+				
+				unsigned matches = 0;
+				for (unsigned k = 0; k < pc; k++)
+				{
+					if (memchr(dt, pt[k], dc)) matches++;
+				}
+				if (matches >= pc) break;
+			}
+			
+			/* if there is no match, add it to the table */
+			if (j == durations)
+			{
+				duration_tbl[j].count = pc;
+				memcpy(duration_tbl[j].tbl, pt, pc);
+				durations++;
+			}
+			
+			duration_pattern_map[i] = j;
+			duration_histogram[j].count++;
+		}
+	}
+	
+	/* sort duration tables by usage */
+	qsort(duration_histogram, durations, sizeof(*duration_histogram), histogram_cmp_desc);
+	unsigned *duration_usage_map = malloc(durations * sizeof(*duration_usage_map));
+	for (unsigned i = 0; i < durations; i++)
+		duration_usage_map[duration_histogram[i].id] = i;
 	
 	
 	
@@ -2248,6 +2312,18 @@ int main(int argc, char *argv[])
 		";\n"
 		"\n", 
 			ctime(&outtime));
+	
+	/* duration table */
+	fprintf(f,
+		"; Duration table.\n"
+		"kn_duration_tbl:");
+	for (unsigned i = 0; i < durations && i < 256; i++)
+		fprintf(f, " db %u,%u,%u,%u\n",
+			duration_tbl[duration_usage_map[i]].tbl[0],
+			duration_tbl[duration_usage_map[i]].tbl[1],
+			duration_tbl[duration_usage_map[i]].tbl[2],
+			duration_tbl[duration_usage_map[i]].tbl[3]);
+	fputc('\n', f);
 	
 	/* song table */
 	fprintf(f,
