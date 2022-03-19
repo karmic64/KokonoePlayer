@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <math.h>
 #include <limits.h>
 #include <time.h>
 #include <sys/stat.h>
@@ -1961,7 +1962,7 @@ int read_module(char *filename)
 							printf("WARNING: Ignoring invalid/unsupported effect $%02X, param $%02X at channel %u, order %u, row %u, col %u\n",
 								c,p,
 								chn,ord,rown,i);
-							/* goto read_module_fail; */
+							continue;
 						}
 						
 						uint8_t out = outp-effect_map;
@@ -2412,7 +2413,7 @@ int main(int argc, char *argv[])
 		fprintf(f, "kn_pat_%u: db %u,%u\n db ", i, p->base_note,duration);
 		
 		duration_ent_t *d = &duration_tbl[duration_histogram[duration].id];
-		int prv_long_dur = -1;
+		unsigned prv_long_dur = -1;
 		
 		uint8_t *pd = databuf+(p->data_index);
 		unsigned ps = p->size;
@@ -2488,6 +2489,39 @@ int main(int argc, char *argv[])
 			}
 		}
 		fprintf(f,"$ff\n");
+	}
+	fputc('\n', f);
+	
+	/* samples */
+	fprintf(f,
+		" align 1\n"
+		"kn_sample_tbl:");
+	if (samples)
+	{
+		fprintf(f, " dl ");
+		for (unsigned i = 0; i < samples; i++)
+		fprintf(f,"kn_smpl_%u%c", i, (i < samples-1)?',':'\n');
+		
+		for (unsigned i = 0; i < samples; i++)
+		{
+			sample_t *s = &sample_tbl[i];
+			/*
+				"rate" is the timer A frequency of the center rate
+				timer A clocks every 18.77us
+			*/
+			unsigned rate = round((1.0 / 0.00001877) / (double)s->center_rate);
+			
+			fprintf(f,
+				"kn_smpl_%u: dl %u,%u\n"
+				" dw %u\n"
+				, i, s->length, s->loop, rate);
+			if (s->length)
+			{
+				fprintf(f," db ");
+				for (unsigned j = 0; j < s->length; j++)
+					fprintf(f, "%u%c", ((uint8_t*)databuf)[s->data_index+j], (j < s->length-1)?',':'\n');
+			}
+		}
 	}
 	
 	
