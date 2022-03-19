@@ -199,7 +199,10 @@ Irrelevant to Genesis. Wavetable reading code is found in https://github.com/til
 	
 	string: Sample name
 	int: Sample length (in samples)
+		This is the ORIGINAL amount of samples, BEFORE pitch scaling.
 	int: Sample rate in Hz
+		On legacy samples this is the sample rate AFTER pitch scaling.
+		This is only relevant if the sample is NOT being used melodically (e.g. with 1701 effect).
 	short: Sample volume, unused in version 58 and later
 		Sample amplitudes are multiplied by (vol / 50.0)
 	short: Sample pitch, unused in version 58 and later
@@ -207,11 +210,15 @@ Irrelevant to Genesis. Wavetable reading code is found in https://github.com/til
 			0.1666666666, 0.2, 0.25, 0.333333333, 0.5, 1, 2, 3, 4, 5, 6
 		Index 5 (value 1) is the "unmodified" sample pitch.
 		"New" sample length is the "real" sample length DIVIDED by the lookup table value.
-	char: Sample depth, either 8 or 16 bits (invalid values are interpreted as 16)
+	char: Sample depth
+		On legacy (version < 58) samples this is either 8 or 16 bits (invalid values are interpreted as 16).
+		On "modern" samples this actually is more like the sample "encoding". We only care about 8 and 16.
+		For more info see https://github.com/tildearrow/furnace/blob/master/src/engine/sample.cpp
 	
 	char: Reserved, unused.
 	
 	short: Sample rate of C-4 in Hz, unused before version 38
+		This is only relevant if the sample is being used melodically (i.e. a sample instrument).
 	
 	int: Sample loop start, unused before version 19
 	

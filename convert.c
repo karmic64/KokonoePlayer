@@ -1163,14 +1163,17 @@ int read_module(char *filename)
 			sample_t smp;
 			smp.length = size;
 			smp.loop = -1; /* deflemask samples cannot loop */
-			smp.rate = rate_tbl[rate-1];
-			smp.center_rate = smp.rate * center_rate_tbl[pitch];
+			smp.rate = rate_tbl[rate-1] * center_rate_tbl[pitch];
+			smp.center_rate = smp.rate;
 			
 			/* convert sample data from signed 16-bit to unsigned 8-bit */
 			uint8_t *sample_base = fr_ptr(&fr);
 			for (unsigned i = 0; i < size; i++)
 			{
-				int16_t s = fr_read16s(&fr) * (amp / 50.0);
+				int s = fr_read16s(&fr) * (amp / 50.0);
+				/* clip properly */
+				if (s < -0x7fff) s = -0x7fff;
+				else if (s > 0x7fff) s = 0x7fff;
 				sample_base[i] = (s>>8) + 128;
 			}
 			smp.data_index = add_data(sample_base,size);
@@ -1396,6 +1399,7 @@ int read_module(char *filename)
 					puts("Invalid pitch.");
 					goto read_module_fail;
 				}
+				smp.rate *= center_rate_tbl[pitch];
 				smp.center_rate *= center_rate_tbl[pitch];
 			}
 			smp.loop = version < 19 ? (unsigned)(-1) : loop;
@@ -1404,13 +1408,19 @@ int read_module(char *filename)
 			uint8_t *sample_base = fr_ptr(&fr);
 			for (unsigned i = 0; i < size; i++)
 			{
-				int16_t s;
+				int s;
 				if (depth == 8)
 					s = fr_read8s(&fr) * 0x100;
 				else
 					s = fr_read16s(&fr);
 				if (version < 58)
+				{
 					s *= (volume / 50.0);
+					/* clip properly */
+					if (s < -0x7fff) s = -0x7fff;
+					else if (s > 0x7fff) s = 0x7fff;
+				}
+
 				
 				sample_base[i] = (s>>8) + 128;
 			}
@@ -2341,6 +2351,7 @@ int main(int argc, char *argv[])
 	/* song table */
 	fprintf(f,
 		"; Song headers.\n"
+		" align 1\n"
 		"kn_song_tbl: dl "
 		);
 	for (unsigned i = 0; i < songs; i++)
@@ -2509,12 +2520,13 @@ int main(int argc, char *argv[])
 				"rate" is the timer A frequency of the center rate
 				timer A clocks every 18.77us
 			*/
-			unsigned rate = round((1.0 / 0.00001877) / (double)s->center_rate);
+			unsigned rate = round((1.0 / 0.00001877) / (double)s->rate);
+			unsigned center_rate = round((1.0 / 0.00001877) / (double)s->center_rate);
 			
 			fprintf(f,
 				"kn_smpl_%u: dl %u,%u\n"
-				" dw %u\n"
-				, i, s->length, s->loop, rate);
+				" dw %u,%u\n"
+				, i, s->length, s->loop, rate,center_rate);
 			if (s->length)
 			{
 				fprintf(f," db ");
