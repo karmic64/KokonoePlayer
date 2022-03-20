@@ -1161,7 +1161,6 @@ int read_module(char *filename)
 			}
 			
 			sample_t smp;
-			smp.length = size;
 			smp.loop = -1; /* deflemask samples cannot loop */
 			smp.rate = rate_tbl[rate-1] * center_rate_tbl[pitch];
 			smp.center_rate = smp.rate;
@@ -1183,6 +1182,16 @@ int read_module(char *filename)
 				*/
 				sample_base[i] = (s>>8) + 128;
 			}
+			
+			/* trim out any trailing silence */
+			uint8_t last_sample = sample_base[size-1];
+			int to_trim = 0;
+			for (unsigned i = size-2; i > 0 && sample_base[i] >= last_sample-2 && sample_base[i] <= last_sample+2; i--)
+				to_trim++;
+			
+			size -= to_trim;
+			
+			smp.length = size;
 			smp.data_index = add_data(sample_base,size);
 			song_sample_map[smpi] = add_sample(&smp);
 		}
@@ -1396,7 +1405,6 @@ int read_module(char *filename)
 			if (depth != 8 && depth != 16) depth = 16;
 			
 			sample_t smp;
-			smp.length = size;
 			smp.rate = rate;
 			smp.center_rate = version < 38 ? rate : center_rate;
 			if (version < 58)
@@ -1438,6 +1446,19 @@ int read_module(char *filename)
 				sample_base[i] = (s>>8) + 128;
 			}
 			
+			/* trim out any trailing silence */
+			if (loop == (unsigned)-1)
+			{
+				uint8_t last_sample = sample_base[size-1];
+				int to_trim = 0;
+				for (unsigned i = size-2; i > 0 && sample_base[i] >= last_sample-2 && sample_base[i] <= last_sample+2; i--)
+					to_trim++;
+				
+				size -= to_trim;
+			}
+			
+			
+			smp.length = size;
 			smp.data_index = add_data(sample_base,size);
 			song_sample_map[smpi] = add_sample(&smp);
 		}
