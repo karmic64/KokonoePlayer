@@ -9,7 +9,7 @@ CFLAGS := -s -Ofast -Wall -Wextra
 LIBS := -lz
 
 
-MODS_DIR := private-mods
+MODS_DIR := mods
 
 
 

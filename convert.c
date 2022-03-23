@@ -253,9 +253,10 @@ typedef struct {
 
 const uint8_t effect_map[] = {
 	0,1,2,3,4,8,9,0xf,0xa,0xb,0xd,0xc,
-	0xe0,0xe1,0xe2,0xe3,0xe4,0xe5,0xea,0xeb,0xec,0xed,0xee,
+	0xe0,0xe1,0xe2,0xe3,0xe4,0xe5,0xea,0xeb,0xec,0xee,
 	0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x19,0x1a,0x1b,0x1c,0x1d,
-	0x20
+	0x20,
+	0xed
 };
 enum {
 	EFF_ARP = 0,
@@ -280,7 +281,6 @@ enum {
 	EFF_LEGATO,
 	EFF_SMPLBANK,
 	EFF_CUT,
-	EFF_DELAY,
 	EFF_SYNC,
 	
 	EFF_LFO,
@@ -299,7 +299,11 @@ enum {
 	
 	EFF_NOISE,
 	
-	AMT_SUPPORTED_EFFECTS
+	AMT_SUPPORTED_EFFECTS,
+	
+	EFF_DELAY = AMT_SUPPORTED_EFFECTS,
+	
+	AMT_EFFECTS
 };
 
 
@@ -1877,13 +1881,15 @@ int read_module(char *filename)
 				/*
 					semi-compiled pattern bytecode:
 						for each row:
-							for each effect, rightmost same effect only, one of:
-								$d0-$ff $yy: effect code $xx-$d0, param $yy
+							if row delay:
+								$fe $xx: delay $xx ticks
 							if any instrument change:
-								$ce $xx: instrument $xx set
-								$cf $xx $yy: instrument $yyxx set
+								$fd $xx: instrument $xx set
+								$fc $xx $yy: instrument $yyxx set
 							if any volume change:
-								$bf $xx: volume $xx set
+								$fb $xx: volume $xx set
+							for each effect, rightmost same effect only, one of:
+								$c0-$fa $yy: effect code $xx-$d0, param $yy
 							for note column, either one of:
 								$a9: off
 								$a8: blank
@@ -1915,8 +1921,8 @@ int read_module(char *filename)
 				int prv_ins = -1;
 				int ins_changed = 0;
 				unsigned prv_dur = -1;
-				short prv_eff[AMT_SUPPORTED_EFFECTS];
-				short cur_eff[AMT_SUPPORTED_EFFECTS];
+				short prv_eff[AMT_EFFECTS];
+				short cur_eff[AMT_EFFECTS];
 				memset(prv_eff,-1,sizeof(prv_eff));
 				
 				/* the conditions for resetting the duration and outputting the row are:
@@ -2040,12 +2046,47 @@ int read_module(char *filename)
 					uint8_t ro[64];
 					unsigned ros = 0;
 					
+					/* special case for delay effect */
+					if (cur_eff[EFF_DELAY] != -1)
+					{
+						ro[ros++] = 0xfe;
+						ro[ros++] = cur_eff[EFF_DELAY];
+					}
+					
+					/* instrument */
+					if (ins_changed)
+					{
+						int actual = song_instrument_map[row->instrument];
+						instrument_histogram[actual].count++;
+						
+						if (actual < 0x100)
+						{
+							ro[ros++] = 0xfc;
+							ro[ros++] = actual;
+						}
+						else
+						{
+							ro[ros++] = 0xfd;
+							ro[ros++] = actual & 0xff;
+							ro[ros++] = actual >> 8;
+						}
+						
+						ins_changed = 0;
+					}
+					
+					/* volume */
+					if (row->volume != -1)
+					{
+						ro[ros++] = 0xfb;
+						ro[ros++] = row->volume;
+					}
+					
 					/* allow each individual effect to decide if it should be output */
 					for (int c = AMT_SUPPORTED_EFFECTS-1; c >= 0; c--)
 					{
 						if (cur_eff[c] == -1) continue;
 						uint8_t p = cur_eff[c];
-						uint8_t oc = c + 0xd0;
+						uint8_t oc = c + 0xc0;
 						
 						switch (c)
 						{
@@ -2074,34 +2115,6 @@ int read_module(char *filename)
 								ro[ros++] = p;
 								break;
 						}
-					}
-					
-					/* instrument */
-					if (ins_changed)
-					{
-						int actual = song_instrument_map[row->instrument];
-						instrument_histogram[actual].count++;
-						
-						if (actual < 0x100)
-						{
-							ro[ros++] = 0xce;
-							ro[ros++] = actual;
-						}
-						else
-						{
-							ro[ros++] = 0xcf;
-							ro[ros++] = actual & 0xff;
-							ro[ros++] = actual >> 8;
-						}
-						
-						ins_changed = 0;
-					}
-					
-					/* volume */
-					if (row->volume != -1)
-					{
-						ro[ros++] = 0xbf;
-						ro[ros++] = row->volume;
 					}
 					
 					/* note */
@@ -2376,10 +2389,10 @@ int main(int argc, char *argv[])
 		"kn_duration_tbl:");
 	for (unsigned i = 0; i < durations && i < 256; i++)
 		fprintf(f, " db %u,%u,%u,%u\n",
-			duration_tbl[duration_usage_map[i]].tbl[0],
-			duration_tbl[duration_usage_map[i]].tbl[1],
-			duration_tbl[duration_usage_map[i]].tbl[2],
-			duration_tbl[duration_usage_map[i]].tbl[3]);
+			duration_tbl[duration_histogram[i].id].tbl[0],
+			duration_tbl[duration_histogram[i].id].tbl[1],
+			duration_tbl[duration_histogram[i].id].tbl[2],
+			duration_tbl[duration_histogram[i].id].tbl[3]);
 	fputc('\n', f);
 	
 	/* song table */
@@ -2455,7 +2468,7 @@ int main(int argc, char *argv[])
 		}
 		
 		/* now actually write the data */
-		fprintf(f, "kn_pat_%u: db %u,%u\n db ", i, p->base_note,duration);
+		fprintf(f, "kn_pat_%u: db %u,%u\n db ", i, duration,p->base_note);
 		
 		duration_ent_t *d = &duration_tbl[duration_histogram[duration].id];
 		unsigned prv_long_dur = -1;
@@ -2467,24 +2480,24 @@ int main(int argc, char *argv[])
 		{
 			uint8_t c = pd[pi++];
 			
-			if (c >= 0xd0) /* effect */
-			{
-				fprintf(f,"$%02X,$%02X, ",c,pd[pi++]);
-			}
-			else if (c == 0xce || c == 0xcf) /* instrument */
+			if (c == 0xfc || c == 0xfd) /* instrument */
 			{
 				unsigned icode = pd[pi++];
-				if (c == 0xcf) icode |= (pd[pi++] << 8);
+				if (c == 0xfd) icode |= (pd[pi++] << 8);
 				icode = instrument_map[icode];
 				
 				if (icode > 0xff)
-					fprintf(f,"$cf,$%02X,$%02X, ",(icode>>8),(icode&0xff));
+					fprintf(f,"$fd,$%02X,$%02X, ",(icode>>8),(icode&0xff));
 				else
-					fprintf(f,"$ce,$%02X, ",icode);
+					fprintf(f,"$fc,$%02X, ",icode);
 			}
-			else if (c == 0xbf) /* volume */
+			else if (c == 0xfb) /* volume */
 			{
-				fprintf(f,"$cd,$%02X, ", pd[pi++]);
+				fprintf(f,"$fb,$%02X, ", pd[pi++]);
+			}
+			else if (c >= 0xc0) /* effect */
+			{
+				fprintf(f,"$%02X,$%02X, ",c,pd[pi++]);
 			}
 			else /* note */
 			{

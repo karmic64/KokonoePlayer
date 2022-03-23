@@ -135,8 +135,45 @@ reset:
 .skiptmss
 	
 	
-	bsr sound_reset
-	bra *
+	move.l #$ffff0000,-(sp)
+	bsr kn_reset
+	addq.l #4,sp
+	
+	
+	move.l #0,-(sp)
+	move.l #$ffff0000,-(sp)
+	bsr kn_init
+	addq.l #8,sp
+	
+	
+	
+	;clear vdp regs
+	move.w #$8000,d0
+.vdpclear:
+	move.w d0,VDPCTRL
+	addi.w #$0100,d0
+	cmpi.w #$a000,d0
+	bne .vdpclear
+	
+	SetVDPReg 4,0
+	SetVDPReg 4,1 ;enable mode 5
+	
+mainloop:
+	cmpi.b #$10,HVCOUNTER
+	bne mainloop
+	
+	SetVDPAddr 0,CRAM_WRITE
+	move.w #$ffff,VDPDATA
+	
+	move.l #$ffff0000,-(sp)
+	bsr kn_play
+	addq.l #4,sp
+	
+	SetVDPAddr 0,CRAM_WRITE
+	move.w #0,VDPDATA
+	
+	
+	bra mainloop
 	
 	
 	

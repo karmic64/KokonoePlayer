@@ -1,3 +1,8 @@
+NOTE! There are official .fur specs which I didn't know existed while writing this.
+For official format information see:
+https://github.com/tildearrow/furnace/blob/master/papers/format.md
+
+
 These are some unofficial specs for the .fur format used in Furnace Tracker.
 The actual reader code can be found at https://github.com/tildearrow/furnace/blob/master/src/engine/fileOps.cpp
 
