@@ -12,3 +12,6 @@ COMPILED-MODULE.asm
 *.elf
 *.bin
 *.gen
+
+
+.fuse_hidden*

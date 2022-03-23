@@ -2556,7 +2556,7 @@ int main(int argc, char *argv[])
 		" align 1\n"
 		"kn_instrument_tbl: dl ");
 	for (unsigned i = 0; i < instruments; i++)
-		fprintf(f,"kn_ins_%u%c", instrument_map[i], (i < instruments-1)?',':'\n');
+		fprintf(f,"kn_ins_%u%c", instrument_histogram[i].id, (i < instruments-1)?',':'\n');
 	
 	unsigned macro_slots = 0;
 	for (unsigned i = 0; i < instruments; i++)

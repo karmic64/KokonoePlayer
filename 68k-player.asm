@@ -17,7 +17,7 @@ AMT_TRACKS = 20
 	clrso
 mac_base so.l 1
 mac_index so.b 1
-mac_null so.b 1
+	so.b 1
 mac_size = __SO
 	
 	
@@ -41,10 +41,25 @@ t_dur_cnt so.b 1
 t_dur_save so.b 1
 t_patt_index so.w 1
 
+;;;
+t_instr so.w 1
+t_vol so.b 1
+	so.b 1
+
+
+;;;
 t_macros so.b mac_size*MACRO_SLOTS
 
-;t_size = __SO
-t_size = $50
+t_fm_op1 so.b 7
+t_fm_op2 so.b 7
+t_fm_op3 so.b 7
+t_fm_op4 so.b 7
+t_fm_global so.b 2
+
+t_psg_vol so.b 1
+	so.b 1
+
+t_size = __SO
 
 
 
@@ -181,7 +196,8 @@ kn_init::
 	dbra d0,.trackclear
 	
 	move.b #$c0,t_flags(a5)
-	move.b (a1)+,t_chn(a5)
+	move.b (a1)+,d2
+	move.b d2,t_chn(a5)
 	move.b d4,t_speed1(a5)
 	move.b d5,t_speed2(a5)
 	move.b d5,t_speed_cnt(a5)
@@ -190,6 +206,15 @@ kn_init::
 	move.l a0,t_seq_base(a5)
 	addq.b #1,t_dur_cnt(a5)
 	addq.w #2,t_patt_index(a5)
+	subq.w #1,t_instr(a5)
+	
+	;depending on channel type, init volume
+	move.b #$7f,d0
+	cmpi.b #6+4,d2
+	blo .volfm
+	move.b #$0f,d0
+.volfm
+	move.b d0,t_vol(a5)
 	
 	move.l d3,d0
 	lsl.l #2,d0
@@ -275,18 +300,72 @@ kn_play::
 	lsl.l #8,d0
 .shortinstr
 	move.b (a0)+,d0
+	;instrument number is now in d0.w
 	
-	;todo instrument
+	cmp.w t_instr(a5),d0
+	beq .afterinstrset
+	move.w d0,t_instr(a5)
 	
+	;get instrument base
+	ext.l d0
+	lsl.l #2,d0
+	lea kn_instrument_tbl,a1
+	movea.l (a1,d0),a1
+	
+	;read macros
+	move.b (a1)+,d5 ;instrument type
+	moveq #0,d6
+	move.b (a1)+,d6 ;macro amount
+	moveq #0,d4 ;macro counter
+	lea t_macros(a5),a2
+	
+	
+.instrmacrosetloop:
+	cmp.b d6,d4
+	bhs .instrmacclear
+	move.l (a1)+,(a2)+
+	move.w #0,(a2)+
+	bra .nextinstrmac
+.instrmacclear:
+	move.l #0,(a2)+
+	move.w #$ffff,(a2)+
+.nextinstrmac
+	addq.b #1,d4
+	cmpi.b #MACRO_SLOTS,d4
+	bne .instrmacrosetloop
+	
+	
+	;;read any extra data
+	cmpi.b #1,d5 ;fm instrument
+	bne .notfminstr
+	
+	;get fm patch address
+	moveq #0,d0
+	move.w (a1)+,d0
+	lsl.l #2,d0
+	lea kn_fm_tbl,a1
+	movea.l (a1,d0),a1
+	
+	;get fm patch
+	lea t_fm_op1(a5),a2
+	;fm data is (7*4)+2 = 30 bytes long
+	rept 28/4
+		move.l (a1)+,(a2)+
+	endr
+	move.w (a1)+,(a2)+
+	
+.notfminstr
+	
+	
+	
+.afterinstrset
 	move.b (a0)+,d0
 .noinstrset
 
 	;; volume
 	cmpi.b #$fb,d0
 	bne .novolset
-	move.b (a0)+,d0
-	
-	;todo volume
+	move.b (a0)+,t_vol(a5)
 	
 	move.b (a0)+,d0
 .novolset
@@ -324,9 +403,8 @@ kn_play::
 	move.b 0(a4),d2
 	lsl.l #2,d2
 	lea kn_duration_tbl,a1
-	adda.w d1,a1
-	adda.w d2,a1
-	move.b (a1),d1
+	add.l d2,d1
+	move.b (a1,d1),d1
 	
 .setdur:
 	move.b d1,t_dur_cnt(a5)
