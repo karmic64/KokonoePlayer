@@ -2613,19 +2613,27 @@ int main(int argc, char *argv[])
 			fprintf(f,
 				"kn_fm_%u: db ",i);
 			
-			for (unsigned op = 0; op < 4; op++)
-			{
-				fprintf(f,
-					"$%02X,$%02X,$%02X,$%02X,$%02X,$%02X,$%02X, "
-					,p->reg30[op]
-					,p->reg40[op]
-					,p->reg50[op]
-					,p->reg60[op]
-					,p->reg70[op]
-					,p->reg80[op]
-					,p->reg90[op]
-					);
-			}
+			fprintf(f,
+				"$%02X,$%02X,$%02X,$%02X, ",
+				p->reg30[0],p->reg30[1],p->reg30[2],p->reg30[3]);
+			fprintf(f,
+				"$%02X,$%02X,$%02X,$%02X, ",
+				p->reg40[0],p->reg40[1],p->reg40[2],p->reg40[3]);
+			fprintf(f,
+				"$%02X,$%02X,$%02X,$%02X, ",
+				p->reg50[0],p->reg50[1],p->reg50[2],p->reg50[3]);
+			fprintf(f,
+				"$%02X,$%02X,$%02X,$%02X, ",
+				p->reg60[0],p->reg60[1],p->reg60[2],p->reg60[3]);
+			fprintf(f,
+				"$%02X,$%02X,$%02X,$%02X, ",
+				p->reg70[0],p->reg70[1],p->reg70[2],p->reg70[3]);
+			fprintf(f,
+				"$%02X,$%02X,$%02X,$%02X, ",
+				p->reg80[0],p->reg80[1],p->reg80[2],p->reg80[3]);
+			fprintf(f,
+				"$%02X,$%02X,$%02X,$%02X, ",
+				p->reg90[0],p->reg90[1],p->reg90[2],p->reg90[3]);
 			
 			fprintf(f,
 				"$%02X,$%02X\n"

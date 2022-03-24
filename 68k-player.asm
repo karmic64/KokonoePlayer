@@ -23,15 +23,29 @@ mac_index so.b 1
 mac_size = __SO
 	
 	
+	
+	;fm patch
+	clrso
+fm_30 so.b 4
+fm_40 so.b 4
+fm_50 so.b 4
+fm_60 so.b 4
+fm_70 so.b 4
+fm_80 so.b 4
+fm_90 so.b 4
+fm_b0 so.b 1
+fm_b4 so.b 1
+fm_size = __SO
+	
+	
 	; track
 T_FLG_ON = 7
 T_FLG_KEYOFF = 6
+T_FLG_FORCE_KEYON = 5
 	
 	
 	clrso
 t_flags so.b 1
-	;bit 7 - 1: track on
-	;bit 6 - 1: track keyed off
 t_chn so.b 1
 
 t_speed1 so.b 1
@@ -56,11 +70,7 @@ t_vol so.b 1
 ;;;
 t_macros so.b mac_size*MACRO_SLOTS
 
-t_fm_op1 so.b 7
-t_fm_op2 so.b 7
-t_fm_op3 so.b 7
-t_fm_op4 so.b 7
-t_fm_global so.b 2
+t_fm so.b fm_size
 
 t_psg_vol so.b 1
 	so.b 1
@@ -68,10 +78,16 @@ t_psg_vol so.b 1
 t_size = __SO
 	
 	
-	
 	;all vars
 	clrso
 k_tracks so.b t_size*AMT_TRACKS
+
+
+k_fm_part1_buf so.b 256
+k_fm_part2_buf so.b 256
+k_fm_part1_size so.b 1
+k_fm_part2_size so.b 1
+
 
 k_chn_track so.b AMT_CHANNELS
 
@@ -269,10 +285,14 @@ kn_play::
 	move.b d0,(a0)+
 	dbra d7,.clrchnloop
 	
+	moveq #0,d0
+	move.b d0,k_fm_part1_size(a6)
+	move.b d0,k_fm_part2_size(a6)
+	
 	
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-	movea.l a6,a5 ;track base pointer
+	lea k_tracks(a6),a5 ;track base pointer
 	move.w #AMT_TRACKS-1,d7 ;track counter
 .trackloop:
 	btst.b #T_FLG_ON,t_flags(a5)
@@ -319,7 +339,7 @@ kn_play::
 	cmpi.b #$fe,d0
 	bne .noeffdelay
 	;todo delay
-	addq.b #1,d0
+	addq.l #1,a0
 	move.b (a0)+,d0
 .noeffdelay
 	
@@ -377,7 +397,7 @@ kn_play::
 	movea.l (a1,d0),a1
 	
 	;get fm patch
-	lea t_fm_op1(a5),a2
+	lea t_fm(a5),a2
 	;fm data is (7*4)+2 = 30 bytes long
 	rept 28/4
 		move.l (a1)+,(a2)+
@@ -460,6 +480,7 @@ kn_play::
 	move.b d0,t_note(a5)
 	
 	bclr.b #T_FLG_KEYOFF,t_flags(a5) ;undo keyoff
+	bset.b #T_FLG_FORCE_KEYON,t_flags(a5)
 	lea t_macros+mac_index(a5),a1 ;restart all macros
 	move.w #MACRO_SLOTS-1,d0
 .notemacclear
@@ -552,9 +573,278 @@ kn_play::
 	
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-	;; todo fm channel output
+	;; fm channel output
+	
+	lea k_chn_track+0(a6),a4
+	lea k_fm_part2_buf(a6),a3
+	
+	moveq #5,d7
+.fm_out_loop:
+	;get channel register offset in d6
+	move.l d7,d6
+	cmpi.b #3,d6
+	blo .fm_no_offs
+	subq.b #3,d6
+.fm_no_offs
+	
+	moveq #0,d0
+	move.b (a4,d7),d0
+	bpl .fm_out_go
+.fm_out_kill:
+	;set RRs of operators to $f
+	move.l d6,d0
+	lsl.l #8,d0
+	ori.w #$80ff,d0
+	move.w d0,(a3)+
+	addi.w #$0400,d0
+	move.w d0,(a3)+
+	addi.w #$0400,d0
+	move.w d0,(a3)+
+	addi.w #$0400,d0
+	move.w d0,(a3)+
+	
+	;key off
+	move.b #$28,(a3)+
+	move.b d7,(a3)+
+	bra .fm_out_next
+.fm_out_go
+	
+	;;get track address
+	lea track_index_tbl,a5
+	lsl.l #1,d0
+	move.w (a5,d0),d0
+	lea (a6,d0),a5
 	
 	
+	;; write fm patch
+	lea t_fm(a5),a2
+	move.l d6,d0
+	lsl.l #8,d0
+	ori.w #$3000,d0
+	move.w #$0400,d1
+	move.w #$ff00,d2
+	
+	;mul/dt
+	rept 4
+		move.b (a2)+,d0
+		move.w d0,(a3)+
+		and.w d2,d0
+		add.w d1,d0
+	endr
+	
+	;tl
+	move.b t_vol(a5),d3 ;tl add value
+	eori.b #$7f,d3
+	
+	move.b t_fm+fm_b0(a5),d4 ;algorithm
+	andi.b #7,d4
+	
+	move.b (a2)+,d0
+	cmpi.b #7,d4
+	bne .fm_out_no_tl1
+	add.b d3,d0
+	bpl .fm_out_no_tl1
+	move.b #$7f,d0
+.fm_out_no_tl1
+	move.w d0,(a3)+
+	and.w d2,d0
+	add.w d1,d0
+	move.b (a2)+,d0
+	cmpi.b #5,d4
+	blo .fm_out_no_tl3
+	add.b d3,d0
+	bpl .fm_out_no_tl3
+	move.b #$7f,d0
+.fm_out_no_tl3
+	move.w d0,(a3)+
+	and.w d2,d0
+	add.w d1,d0
+	move.b (a2)+,d0
+	cmpi.b #4,d4
+	blo .fm_out_no_tl2
+	add.b d3,d0
+	bpl .fm_out_no_tl2
+	move.b #$7f,d0
+.fm_out_no_tl2
+	move.w d0,(a3)+
+	and.w d2,d0
+	add.w d1,d0
+	move.b (a2)+,d0
+	add.b d3,d0
+	move.w d0,(a3)+
+	and.w d2,d0
+	add.w d1,d0
+	
+	;everything else
+	rept 5*4
+		move.b (a2)+,d0
+		move.w d0,(a3)+
+		and.w d2,d0
+		add.w d1,d0
+	endr
+	
+	addi.w #$1000,d0
+	move.b (a2)+,d0
+	move.w d0,(a3)+
+	add.w d1,d0
+	move.b (a2)+,d0
+	ori.b #$c0,d0
+	move.w d0,(a3)+
+	
+	
+	;; if the force-key-on flag is on, key off first
+	btst.b #T_FLG_FORCE_KEYON,t_flags(a5)
+	beq .fm_out_no_force_keyon
+	move.w #$28f0,d0
+	move.b d6,d0
+	cmpi.b #3,d7
+	blo .fm_out_force_part1
+	ori.b #4,d0
+.fm_out_force_part1
+	move.w d0,(a3)+
+.fm_out_no_force_keyon
+	
+	
+	;; write frequency
+	moveq #0,d0
+	move.b t_note(a5),d0
+	lsl.l #1,d0
+	lea note_octave_tbl,a0
+	lea (a0,d0),a0
+	moveq #0,d0
+	moveq #0,d1
+	move.b (a0)+,d0 ;octave
+	move.b (a0)+,d1 ;note
+	lea fm_fnum_tbl,a0
+	lsl.l #1,d1
+	move.w (a0,d1),d1
+	lsl.l #8,d0
+	lsl.l #3,d0
+	or.w d1,d0
+	move.l d0,d1
+	lsr.w #8,d1
+	move.b #$a4,d2
+	or.b d6,d2
+	move.b d2,(a3)+
+	move.b d1,(a3)+
+	subq.b #4,d2
+	move.b d2,(a3)+
+	move.b d0,(a3)+
+	
+	
+	;; write key-on state
+	move.w #$2800,d0
+	move.b d6,d0
+	cmpi.b #3,d7
+	blo .fm_out_off_part1
+	ori.b #4,d0
+.fm_out_off_part1
+	btst.b #T_FLG_KEYOFF,t_flags(a5)
+	bne .fm_out_key_is_off
+	ori.b #$f0,d0
+.fm_out_key_is_off
+	move.w d0,(a3)+
+	
+	
+	
+	
+	
+.fm_out_next
+	;; are we done dealing with part 2?
+	cmpi.b #3,d7
+	bne .fm_out_no_flush_part2
+	lea k_fm_part2_buf(a6),a2
+	suba.l a2,a3
+	move.l a3,d0
+	lsr.l #1,d0
+	move.b d0,k_fm_part2_size(a6)
+	
+	lea k_fm_part1_buf(a6),a3
+.fm_out_no_flush_part2
+	dbra d7,.fm_out_loop
+	
+	;; flush part 1
+	lea k_fm_part1_buf(a6),a2
+	suba.l a2,a3
+	move.l a3,d0
+	lsr.l #1,d0
+	move.b d0,k_fm_part1_size(a6)
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; give any fm register writes to the z80
+	move.b k_fm_part1_size(a6),d0
+	or.b k_fm_part2_size(a6),d0
+	beq .no_fm_writes
+	
+	lea Z80,a4
+	lea Z80BUSREQ,a5 ;request the z80 bus
+	move.w #$0100,d0
+	move.w d0,(a5)
+.wait_z80:	
+	cmp.w (a5),d0
+	beq .wait_z80
+	
+	;; do part 1 writes
+	moveq #0,d7
+	move.b k_fm_part1_size(a6),d7
+	beq .no_part1
+	
+	lea k_fm_part1_buf(a6),a0
+	lea $1800(a4),a1
+	lea $1900(a4),a2
+	moveq #0,d1
+	move.b $1c00(a4),d1
+	
+	subq.w #1,d7
+.part1_loop
+	move.b (a0)+,(a1,d1)
+	move.b (a0)+,(a2,d1)
+	addq.b #1,d1
+	dbra d7,.part1_loop
+	move.b d1,$1c00(a4)
+	
+.no_part1
+
+
+	;; do part 2 writes
+	moveq #0,d7
+	move.b k_fm_part2_size(a6),d7
+	beq .no_part2
+	
+	lea k_fm_part2_buf(a6),a0
+	lea $1a00(a4),a1
+	lea $1b00(a4),a2
+	moveq #0,d1
+	move.b $1c01(a4),d1
+	
+	subq.w #1,d7
+.part2_loop
+	move.b (a0)+,(a1,d1)
+	move.b (a0)+,(a2,d1)
+	addq.b #1,d1
+	dbra d7,.part2_loop
+	move.b d1,$1c01(a4)
+	
+.no_part2
+	
+	
+	
+	
+	moveq #0,d0 ;release the bus
+	move.w d0,(a5)
+	
+.no_fm_writes:
 	
 	
 	
@@ -639,6 +929,16 @@ kn_play::
 	dbra d7,.psg_out_loop
 	
 	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; disable any force-keyon
+	lea k_tracks(a6),a5
+	moveq #AMT_TRACKS-1,d7
+	
+.unforce_keyon_loop
+	bclr.b #T_FLG_FORCE_KEYON,t_flags(a5)
+	adda.l #t_size,a5
+	dbra d7,.unforce_keyon_loop
+	
 	
 	
 	movem.l (sp)+,d2-d7/a2-a6
@@ -655,6 +955,12 @@ track_index_tbl:
 	rept AMT_TRACKS
 		dw t_size*REPTN + k_tracks
 	endr
+	
+	
+	
+fm_fnum_tbl:
+	dw 644,681,722,765,810,858,910,964,1021,1081,1146,1214
+	dw 644*2 ;this is only used when finetuning between B and the next octave's C
 	
 	
 	include "GENERATED-DATA.asm"

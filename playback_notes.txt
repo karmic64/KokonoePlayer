@@ -8,6 +8,8 @@ There are two types of instruments, STD and FM. STD instruments are intended for
 
 Furnace FM instruments actually do have envelopes that allow you to control EVERY single aspect of the FM patches, as well as the usual volume and arpeggio. Cool feature, but having to update about 50 envelopes per channel per frame sounds like a CPU time nightmare, so I am unlikely to bother implementing it.
 
+Furnace macros have release parts, but they are unusable on PSG since releasing the note cuts the channel.
+Actually they don't seem fully implemented yet, the tracker currently simply acts as if the release point is the end of the macro.
 
 
 --- Speed ---
@@ -60,6 +62,7 @@ This bug is not emulated in Furnace.
 
 Slides use a linear pitch scale and it takes $280 (640) ticks to slide up/down an octave at slide speed 1.
 This measurement is slightly off when sliding farther though, so this should only be used as an approximation.
+(NO! this is a mis-interpretation caused by the fact fm sliding is "linear" by the nature of the fnum/block system. PSG sliding is NOT linear.)
 
 
 
