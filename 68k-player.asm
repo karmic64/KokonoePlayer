@@ -87,6 +87,9 @@ k_chn_track so.b AMT_CHANNELS
 
 k_psg_prv_noise so.b 1
 
+k_fm_prv_chn3_keyon so.b 1
+k_fm_extd_chn3 so.b 1
+
 KN_VAR_SIZE = __SO
 
 	public KN_VAR_SIZE
@@ -157,12 +160,15 @@ kn_reset::
 	
 	;;;;;; clear music ram
 	movea.l .arg_music_base(sp),a6
+	movea.l a6,a5
 	
 	move.w #KN_VAR_SIZE/4 - 1, d7
 .clearram:
-	move.l d0,(a6)+
+	move.l d0,(a5)+
 	dbra d7,.clearram
 	
+	
+	move.b #2,k_fm_prv_chn3_keyon(a6)
 	
 	
 	movem.l (sp)+,d2-d7/a2-a6
@@ -575,8 +581,6 @@ kn_play::
 	
 	lea Z80+$4000,a3 ;part 1 reg port
 	lea 1(a3),a4 ;part 1 data port
-	lea 2(a3),a1 ;"current" part reg port
-	lea 3(a3),a2 ;"current" part data port
 	
 	
 	macro fm_reg
@@ -600,6 +604,194 @@ kn_play::
 	endm
 	
 	
+	;;;;;;;;;;;;;;;;;; extd.chn3 out
+	
+	fm_reg_1 #$27
+	;;first see if we should actually use it at all
+	
+	;if all extd.chn3 tracks are unoccupied use std.chn3
+	lea k_chn_track+6(a6),a2
+	move.b 0(a2),d0
+	and.b 1(a2),d0
+	and.b 2(a2),d0
+	and.b 3(a2),d0
+	bmi .no_fm_3_out
+	
+	;if the std.chn3 track is higher than any extd.chn3 track, do std.chn3
+	move.b k_chn_track+2(a6),d0
+	bmi .do_fm_3_out
+	cmp.b 0(a2),d0
+	bhi .no_fm_3_out
+	cmp.b 1(a2),d0
+	bhi .no_fm_3_out
+	cmp.b 2(a2),d0
+	bhi .no_fm_3_out
+	cmp.b 3(a2),d0
+	bhi .no_fm_3_out
+	
+.do_fm_3_out:
+	;ok, turn on extd.chn3
+	fm_write_1 #$55
+	
+	move.b #$fe,k_chn_track+2(a6)
+	move.b #$ff,k_fm_extd_chn3(a6)
+	
+	
+	moveq #3,d7
+.fm_3_out_loop:
+	; get operator index
+	move.l d7,d6
+	lsl.b #2,d6
+	addq.b #2,d6
+	; get keyoff bit
+	move.l d7,d5
+	addq.b #4,d5
+	
+	moveq #0,d0
+	move.b (a2,d7),d0
+	bpl .fm_3_out_go
+.fm_3_out_kill:
+	;set RR of operator to $0f
+	move.l d6,d0
+	ori.b #$80,d0
+	fm_reg_1 d0
+	fm_write_1 #$ff
+	
+	;keyoff
+	fm_reg_1 #$28
+	move.b k_fm_prv_chn3_keyon(a6),d0
+	bclr d5,d0
+	move.b d0,k_fm_prv_chn3_keyon(a6)
+	fm_write_1 d0
+	
+	bra .fm_3_out_next
+	
+.fm_3_out_go:
+	
+	;;get track address
+	lea track_index_tbl,a5
+	lsl.l #1,d0
+	move.w (a5,d0),d0
+	lea (a6,d0),a5
+	
+	
+	;; if the note will be reset, keyoff first
+	btst.b #T_FLG_NOTE_RESET,t_flags(a5)
+	beq .fm_3_out_no_reset
+	fm_reg_1 #$28
+	move.b k_fm_prv_chn3_keyon(a6),d0
+	bclr d5,d0
+	move.b d0,k_fm_prv_chn3_keyon(a6)
+	fm_write_1 d0
+.fm_3_out_no_reset
+	
+	
+	;; write fm patch (but just for this operator)
+	lea t_fm(a5,d7),a0
+	move.l d6,d0
+	ori.b #$30,d0
+	move.b #$10,d2
+	
+	;mul/dt
+	fm_reg_1 d0
+	fm_write_1 (a0)
+	addq.l #4,a0
+	add.b d2,d0
+	
+	;tl
+	moveq #0,d1
+	move.b t_vol(a5),d1
+	eori.b #$7f,d1
+	add.b (a0),d1
+	bpl .fm_3_no_tl
+	move.b #$7f,d1
+.fm_3_no_tl
+	fm_reg_1 d0
+	fm_write_1 d1
+	addq.l #4,a0
+	add.b d2,d0
+	
+	rept 5
+		fm_reg_1 d0
+		fm_write_1 (a0)
+		addq.l #4,a0
+		add.b d2,d0
+	endr
+	
+	;ONLY write the global fm params for the highest channel
+	tst.b k_fm_extd_chn3(a6)
+	bpl .fm_3_no_global
+	move.b d7,k_fm_extd_chn3(a6)
+	
+	fm_reg_1 #$b2
+	fm_write_1 t_fm+fm_b0(a5)
+	fm_reg_1 #$b6
+	move.b t_fm+fm_b4(a5),d0
+	ori.b #$c0,d0
+	fm_write_1 d0
+.fm_3_no_global:
+	
+	
+	;; write frequency
+	moveq #0,d0
+	moveq #0,d1
+	move.b t_note(a5),d0
+	lsl.l #1,d0
+	lea note_octave_tbl,a0
+	lea (a0,d0),a0
+	move.b (a0)+,d0 ;octave
+	move.b (a0)+,d1 ;note
+	lsl.l #1,d1 ;fnum
+	lea fm_fnum_tbl,a0
+	move.w (a0,d1),d1
+	
+	;get register value
+	lsl.l #8,d0
+	lsl.l #3,d0
+	or.l d1,d0
+	move.l d0,d1
+	lsr.l #8,d0
+	
+	;actually write it
+	lea fm_chn3_freq_reg_tbl,a0
+	move.b (a0,d7),d2
+	fm_reg_1 d2
+	fm_write_1 d0
+	subq.b #4,d2
+	fm_reg_1 d2
+	fm_write_1 d1
+	
+	
+	;;write key state
+	move.b k_fm_prv_chn3_keyon(a6),d0
+	bclr d5,d0
+	btst.b #T_FLG_KEYOFF,t_flags(a5)
+	bne .fm_3_out_keyedoff
+	bset d5,d0
+.fm_3_out_keyedoff
+	move.b d0,k_fm_prv_chn3_keyon(a6)
+	fm_reg_1 #$28
+	fm_write_1 d0
+	
+	
+	
+.fm_3_out_next:
+	dbra d7,.fm_3_out_loop
+	
+	
+	bra .fm_normal_out
+	
+.no_fm_3_out:
+
+	;no, turn off extd. chn3
+	fm_write_1 #$15
+
+	
+	;;;;;;;;;;;;;;;;;;; standard fm out
+.fm_normal_out:
+	lea 2(a3),a1 ;"current" part reg port
+	lea 3(a3),a2 ;"current" part data port
+	
 	moveq #5,d7
 .fm_out_loop:
 	;get channel register offset in d6, and keyon offset in d5
@@ -615,6 +807,8 @@ kn_play::
 	lea k_chn_track+0(a6),a0
 	move.b (a0,d7),d0
 	bpl .fm_out_go
+	cmpi.b #$fe,d0 ;if this channel was disabled be extd.chn3, do nothing
+	beq .fm_out_next
 .fm_out_kill:
 	;set RRs of operators to $f
 	move.l d6,d0
@@ -773,6 +967,10 @@ kn_play::
 	ori.b #$f0,d0
 .fm_out_no_keyon
 	fm_write_1 d0
+	cmpi.b #2,d7
+	bne .fm_out_no_set_chn3_keyon
+	move.b d0,k_fm_prv_chn3_keyon(a6)
+.fm_out_no_set_chn3_keyon
 	
 	
 	
@@ -911,6 +1109,9 @@ track_index_tbl:
 	endr
 	
 	
+	
+fm_chn3_freq_reg_tbl:
+	db $ad,$ac,$ae,$a6
 	
 fm_fnum_tbl:
 	dw 644,681,722,765,810,858,910,964,1021,1081,1146,1214
