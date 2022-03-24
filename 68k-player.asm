@@ -41,7 +41,7 @@ fm_size = __SO
 	; track
 T_FLG_ON = 7
 T_FLG_KEYOFF = 6
-T_FLG_FORCE_KEYON = 5
+T_FLG_NOTE_RESET = 5
 	
 	
 	clrso
@@ -83,12 +83,6 @@ t_size = __SO
 k_tracks so.b t_size*AMT_TRACKS
 
 
-k_fm_part1_buf so.b 256
-k_fm_part2_buf so.b 256
-k_fm_part1_size so.b 1
-k_fm_part2_size so.b 1
-
-
 k_chn_track so.b AMT_CHANNELS
 
 k_psg_prv_noise so.b 1
@@ -115,8 +109,6 @@ KN_VAR_SIZE = __SO
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; Reset routine
-	;; Params:
-	;;	long: ram base
 kn_reset::
 	cargs #(6+5+1)*4,.arg_music_base.l
 	
@@ -285,9 +277,6 @@ kn_play::
 	move.b d0,(a0)+
 	dbra d7,.clrchnloop
 	
-	moveq #0,d0
-	move.b d0,k_fm_part1_size(a6)
-	move.b d0,k_fm_part2_size(a6)
 	
 	
 	
@@ -480,7 +469,7 @@ kn_play::
 	move.b d0,t_note(a5)
 	
 	bclr.b #T_FLG_KEYOFF,t_flags(a5) ;undo keyoff
-	bset.b #T_FLG_FORCE_KEYON,t_flags(a5)
+	bset.b #T_FLG_NOTE_RESET,t_flags(a5)
 	lea t_macros+mac_index(a5),a1 ;restart all macros
 	move.w #MACRO_SLOTS-1,d0
 .notemacclear
@@ -575,37 +564,77 @@ kn_play::
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; fm channel output
 	
-	lea k_chn_track+0(a6),a4
-	lea k_fm_part2_buf(a6),a3
+	;request z80 bus
+	lea Z80BUSREQ,a0
+	move.w #$0100,d0
+	move.w d0,(a0)
+.fm_wait_z80
+	cmp.w (a0),d0
+	beq .fm_wait_z80
+	
+	
+	lea Z80+$4000,a3 ;part 1 reg port
+	lea 1(a3),a4 ;part 1 data port
+	lea 2(a3),a1 ;"current" part reg port
+	lea 3(a3),a2 ;"current" part data port
+	
+	
+	macro fm_reg
+		move.b \1,(a1)
+	endm
+	macro fm_reg_1
+		move.b \1,(a3)
+	endm
+	
+	macro fm_write
+.fm_write_wait_\@:
+		tst.b (a2)
+		bmi .fm_write_wait_\@
+		move.b \1,(a2)
+	endm
+	macro fm_write_1
+.fm_write_1_wait_\@:
+		tst.b (a4)
+		bmi .fm_write_1_wait_\@
+		move.b \1,(a4)
+	endm
+	
 	
 	moveq #5,d7
 .fm_out_loop:
-	;get channel register offset in d6
+	;get channel register offset in d6, and keyon offset in d5
 	move.l d7,d6
+	move.l d7,d5
 	cmpi.b #3,d6
 	blo .fm_no_offs
 	subq.b #3,d6
+	addq.b #1,d5
 .fm_no_offs
 	
 	moveq #0,d0
-	move.b (a4,d7),d0
+	lea k_chn_track+0(a6),a0
+	move.b (a0,d7),d0
 	bpl .fm_out_go
 .fm_out_kill:
 	;set RRs of operators to $f
 	move.l d6,d0
-	lsl.l #8,d0
-	ori.w #$80ff,d0
-	move.w d0,(a3)+
-	addi.w #$0400,d0
-	move.w d0,(a3)+
-	addi.w #$0400,d0
-	move.w d0,(a3)+
-	addi.w #$0400,d0
-	move.w d0,(a3)+
+	ori.b #$80,d0
+	move.b #$ff,d1
+	fm_reg d0
+	fm_write d1
+	addq.b #4,d0
+	fm_reg d0
+	fm_write d1
+	addq.b #4,d0
+	fm_reg d0
+	fm_write d1
+	addq.b #4,d0
+	fm_reg d0
+	fm_write d1
 	
 	;key off
-	move.b #$28,(a3)+
-	move.b d7,(a3)+
+	fm_reg_1 #$28
+	fm_write_1 d5
 	bra .fm_out_next
 .fm_out_go
 	
@@ -616,134 +645,134 @@ kn_play::
 	lea (a6,d0),a5
 	
 	
+	
+	;; if the note will be reset, keyoff first
+	btst.b #T_FLG_NOTE_RESET,t_flags(a5)
+	beq .fm_out_no_reset
+	fm_reg_1 #$28
+	fm_write_1 d5
+.fm_out_no_reset
+	
+	
+	
 	;; write fm patch
-	lea t_fm(a5),a2
+	lea t_fm(a5),a0
 	move.l d6,d0
-	lsl.l #8,d0
-	ori.w #$3000,d0
-	move.w #$0400,d1
-	move.w #$ff00,d2
+	ori.b #$30,d0
 	
 	;mul/dt
 	rept 4
-		move.b (a2)+,d0
-		move.w d0,(a3)+
-		and.w d2,d0
-		add.w d1,d0
+		fm_reg d0
+		fm_write (a0)+
+		addq.b #4,d0
 	endr
 	
 	;tl
-	move.b t_vol(a5),d3 ;tl add value
-	eori.b #$7f,d3
+	move.b t_vol(a5),d2 ;first get the tl add value
+	eori.b #$7f,d2
 	
-	move.b t_fm+fm_b0(a5),d4 ;algorithm
-	andi.b #7,d4
+	move.b t_fm+fm_b0(a5),d3 ;then get algorithm
+	andi.b #$07,d3
 	
-	move.b (a2)+,d0
-	cmpi.b #7,d4
-	bne .fm_out_no_tl1
-	add.b d3,d0
-	bpl .fm_out_no_tl1
-	move.b #$7f,d0
-.fm_out_no_tl1
-	move.w d0,(a3)+
-	and.w d2,d0
-	add.w d1,d0
-	move.b (a2)+,d0
-	cmpi.b #5,d4
-	blo .fm_out_no_tl3
-	add.b d3,d0
-	bpl .fm_out_no_tl3
-	move.b #$7f,d0
-.fm_out_no_tl3
-	move.w d0,(a3)+
-	and.w d2,d0
-	add.w d1,d0
-	move.b (a2)+,d0
-	cmpi.b #4,d4
-	blo .fm_out_no_tl2
-	add.b d3,d0
-	bpl .fm_out_no_tl2
-	move.b #$7f,d0
-.fm_out_no_tl2
-	move.w d0,(a3)+
-	and.w d2,d0
-	add.w d1,d0
-	move.b (a2)+,d0
-	add.b d3,d0
-	move.w d0,(a3)+
-	and.w d2,d0
-	add.w d1,d0
+	;tl 1
+	move.b (a0)+,d1
+	cmpi.b #7,d3
+	blo .fm_no_tl1
+	add.b d2,d1
+.fm_no_tl1
+	fm_reg d0
+	fm_write d1
+	addq.b #4,d0
+	
+	;tl 3
+	move.b (a0)+,d1
+	cmpi.b #5,d3
+	blo .fm_no_tl3
+	add.b d2,d1
+.fm_no_tl3
+	fm_reg d0
+	fm_write d1
+	addq.b #4,d0
+	
+	;tl 2
+	move.b (a0)+,d1
+	cmpi.b #4,d3
+	blo .fm_no_tl2
+	add.b d2,d1
+.fm_no_tl2
+	fm_reg d0
+	fm_write d1
+	addq.b #4,d0
+	
+	;tl 4
+	move.b (a0)+,d1
+	add.b d2,d1
+	fm_reg d0
+	fm_write d1
+	addq.b #4,d0
+	
 	
 	;everything else
 	rept 5*4
-		move.b (a2)+,d0
-		move.w d0,(a3)+
-		and.w d2,d0
-		add.w d1,d0
+		fm_reg d0
+		fm_write (a0)+
+		addq.b #4,d0
 	endr
 	
-	addi.w #$1000,d0
-	move.b (a2)+,d0
-	move.w d0,(a3)+
-	add.w d1,d0
-	move.b (a2)+,d0
-	ori.b #$c0,d0
-	move.w d0,(a3)+
+	;global
+	addi.b #$10,d0
+	fm_reg d0
+	fm_write (a0)+
+	addq.b #4,d0
+	fm_reg d0
+	move.b (a0)+,d1
+	ori.b #$c0,d1
+	fm_write d1
 	
 	
-	;; if the force-key-on flag is on, key off first
-	btst.b #T_FLG_FORCE_KEYON,t_flags(a5)
-	beq .fm_out_no_force_keyon
-	move.w #$28f0,d0
-	move.b d6,d0
-	cmpi.b #3,d7
-	blo .fm_out_force_part1
-	ori.b #4,d0
-.fm_out_force_part1
-	move.w d0,(a3)+
-.fm_out_no_force_keyon
 	
 	
 	;; write frequency
 	moveq #0,d0
+	moveq #0,d1
 	move.b t_note(a5),d0
 	lsl.l #1,d0
 	lea note_octave_tbl,a0
 	lea (a0,d0),a0
-	moveq #0,d0
-	moveq #0,d1
 	move.b (a0)+,d0 ;octave
 	move.b (a0)+,d1 ;note
+	lsl.l #1,d1 ;fnum
 	lea fm_fnum_tbl,a0
-	lsl.l #1,d1
 	move.w (a0,d1),d1
+	
+	;get register value
 	lsl.l #8,d0
 	lsl.l #3,d0
-	or.w d1,d0
+	or.l d1,d0
 	move.l d0,d1
-	lsr.w #8,d1
-	move.b #$a4,d2
-	or.b d6,d2
-	move.b d2,(a3)+
-	move.b d1,(a3)+
+	lsr.l #8,d0
+	
+	;actually write it
+	move.l d6,d2
+	ori.b #$a4,d2
+	fm_reg d2
+	fm_write d0
 	subq.b #4,d2
-	move.b d2,(a3)+
-	move.b d0,(a3)+
+	fm_reg d2
+	fm_write d1
 	
 	
-	;; write key-on state
-	move.w #$2800,d0
-	move.b d6,d0
-	cmpi.b #3,d7
-	blo .fm_out_off_part1
-	ori.b #4,d0
-.fm_out_off_part1
+	
+	
+	
+	;; write keyoff state
+	fm_reg_1 #$28
+	move.l d5,d0
 	btst.b #T_FLG_KEYOFF,t_flags(a5)
-	bne .fm_out_key_is_off
+	bne .fm_out_no_keyon
 	ori.b #$f0,d0
-.fm_out_key_is_off
-	move.w d0,(a3)+
+.fm_out_no_keyon
+	fm_write_1 d0
 	
 	
 	
@@ -753,22 +782,15 @@ kn_play::
 	;; are we done dealing with part 2?
 	cmpi.b #3,d7
 	bne .fm_out_no_flush_part2
-	lea k_fm_part2_buf(a6),a2
-	suba.l a2,a3
-	move.l a3,d0
-	lsr.l #1,d0
-	move.b d0,k_fm_part2_size(a6)
+	suba.l #2,a1
+	suba.l #2,a2
 	
-	lea k_fm_part1_buf(a6),a3
 .fm_out_no_flush_part2
 	dbra d7,.fm_out_loop
 	
-	;; flush part 1
-	lea k_fm_part1_buf(a6),a2
-	suba.l a2,a3
-	move.l a3,d0
-	lsr.l #1,d0
-	move.b d0,k_fm_part1_size(a6)
+	
+	
+	move.w #0,Z80BUSREQ ;release the bus
 	
 	
 	
@@ -777,74 +799,6 @@ kn_play::
 	
 	
 	
-	
-	
-	
-	
-	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-	;; give any fm register writes to the z80
-	move.b k_fm_part1_size(a6),d0
-	or.b k_fm_part2_size(a6),d0
-	beq .no_fm_writes
-	
-	lea Z80,a4
-	lea Z80BUSREQ,a5 ;request the z80 bus
-	move.w #$0100,d0
-	move.w d0,(a5)
-.wait_z80:	
-	cmp.w (a5),d0
-	beq .wait_z80
-	
-	;; do part 1 writes
-	moveq #0,d7
-	move.b k_fm_part1_size(a6),d7
-	beq .no_part1
-	
-	lea k_fm_part1_buf(a6),a0
-	lea $1800(a4),a1
-	lea $1900(a4),a2
-	moveq #0,d1
-	move.b $1c00(a4),d1
-	
-	subq.w #1,d7
-.part1_loop
-	move.b (a0)+,(a1,d1)
-	move.b (a0)+,(a2,d1)
-	addq.b #1,d1
-	dbra d7,.part1_loop
-	move.b d1,$1c00(a4)
-	
-.no_part1
-
-
-	;; do part 2 writes
-	moveq #0,d7
-	move.b k_fm_part2_size(a6),d7
-	beq .no_part2
-	
-	lea k_fm_part2_buf(a6),a0
-	lea $1a00(a4),a1
-	lea $1b00(a4),a2
-	moveq #0,d1
-	move.b $1c01(a4),d1
-	
-	subq.w #1,d7
-.part2_loop
-	move.b (a0)+,(a1,d1)
-	move.b (a0)+,(a2,d1)
-	addq.b #1,d1
-	dbra d7,.part2_loop
-	move.b d1,$1c01(a4)
-	
-.no_part2
-	
-	
-	
-	
-	moveq #0,d0 ;release the bus
-	move.w d0,(a5)
-	
-.no_fm_writes:
 	
 	
 	
@@ -935,7 +889,7 @@ kn_play::
 	moveq #AMT_TRACKS-1,d7
 	
 .unforce_keyon_loop
-	bclr.b #T_FLG_FORCE_KEYON,t_flags(a5)
+	bclr.b #T_FLG_NOTE_RESET,t_flags(a5)
 	adda.l #t_size,a5
 	dbra d7,.unforce_keyon_loop
 	
