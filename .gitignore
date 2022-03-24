@@ -2,6 +2,7 @@ private-mods
 
 
 convert
+generate-data
 
 
 COMPILED-MODULE.asm

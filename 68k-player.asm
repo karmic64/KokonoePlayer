@@ -7,7 +7,9 @@ PSG = $c00011
 
 
 
-AMT_TRACKS = 20
+AMT_TRACKS = 14
+
+AMT_CHANNELS = 14
 
 
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -22,6 +24,10 @@ mac_size = __SO
 	
 	
 	; track
+T_FLG_ON = 7
+T_FLG_KEYOFF = 6
+	
+	
 	clrso
 t_flags so.b 1
 	;bit 7 - 1: track on
@@ -43,8 +49,8 @@ t_patt_index so.w 1
 
 ;;;
 t_instr so.w 1
+t_note so.b 1
 t_vol so.b 1
-	so.b 1
 
 
 ;;;
@@ -60,6 +66,21 @@ t_psg_vol so.b 1
 	so.b 1
 
 t_size = __SO
+	
+	
+	
+	;all vars
+	clrso
+k_tracks so.b t_size*AMT_TRACKS
+
+k_chn_track so.b AMT_CHANNELS
+
+k_psg_prv_noise so.b 1
+
+KN_VAR_SIZE = __SO
+
+	public KN_VAR_SIZE
+	
 
 
 
@@ -129,7 +150,7 @@ kn_reset::
 	;;;;;; clear music ram
 	movea.l .arg_music_base(sp),a6
 	
-	move.w #(t_size*AMT_TRACKS)/4 - 1, d7
+	move.w #KN_VAR_SIZE/4 - 1, d7
 .clearram:
 	move.l d0,(a6)+
 	dbra d7,.clearram
@@ -237,14 +258,24 @@ kn_play::
 	
 	movem.l d2-d7/a2-a6,-(sp)
 	
-	movea.l .arg_music_base(sp),a6	
+	movea.l .arg_music_base(sp),a6
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	
+	lea k_chn_track(a6),a0
+	move.w #AMT_CHANNELS-1,d7
+	moveq #-1,d0
+.clrchnloop:
+	move.b d0,(a0)+
+	dbra d7,.clrchnloop
+	
 	
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	movea.l a6,a5 ;track base pointer
 	move.w #AMT_TRACKS-1,d7 ;track counter
 .trackloop:
-	btst.b #7,t_flags(a5)
+	btst.b #T_FLG_ON,t_flags(a5)
 	beq .notrack
 	
 	
@@ -324,12 +355,11 @@ kn_play::
 	cmp.b d6,d4
 	bhs .instrmacclear
 	move.l (a1)+,(a2)+
-	move.w #0,(a2)+
 	bra .nextinstrmac
 .instrmacclear:
 	move.l #0,(a2)+
-	move.w #$ffff,(a2)+
 .nextinstrmac
+	move.w #0,(a2)+
 	addq.b #1,d4
 	cmpi.b #MACRO_SLOTS,d4
 	bne .instrmacrosetloop
@@ -416,7 +446,7 @@ kn_play::
 	cmpi.b #$1e,d0
 	bne .nonoteoff
 	
-	bset.b #6,t_flags(a5)
+	bset.b #T_FLG_KEYOFF,t_flags(a5)
 	bra .blanknote
 	
 .nonoteoff:
@@ -425,11 +455,18 @@ kn_play::
 	move.b (a0)+,d0
 	bra .gotnote
 .nolongnote:
-	add.b 1(a4),d2
+	add.b 1(a4),d0
 .gotnote
+	move.b d0,t_note(a5)
 	
-	; todo actual note stuff
-	bclr.b #6,t_flags(a5)
+	bclr.b #T_FLG_KEYOFF,t_flags(a5) ;undo keyoff
+	lea t_macros+mac_index(a5),a1 ;restart all macros
+	move.w #MACRO_SLOTS-1,d0
+.notemacclear
+	move.w #0,(a1)+
+	addq.l #4,a1
+	dbra d0,.notemacclear
+	
 	
 .blanknote:
 	
@@ -455,9 +492,152 @@ kn_play::
 	addq.b #1,t_speed_cnt(a5)
 	
 	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; handle macros
+	move.w #MACRO_SLOTS-1,d6
+	lea t_macros(a5),a4
+	
+.macro_loop:
+	movea.l (a4)+,a0
+	moveq #0,d0
+	move.w (a4)+,d0
+	
+	move.l a0,d1 ;pointer is null?
+	beq .next_macro
+	cmp.b 1(a0),d0 ;already reached end?
+	bne .do_macro
+	move.b 2(a0),d1 ;is there a loop?
+	cmpi.b #$ff,d1
+	beq .next_macro
+	move.b d1,d0
+.do_macro
+	addq.l #4,a0 ;get actual macro value
+	move.b (a0,d0),d1
+	addq.w #1,d0 ;step index
+	move.w d0,-2(a4)
+	moveq #0,d0 ;get macro type
+	move.b -4(a0),d0
+	
+	;eventually do this properly, for now all we support is psg volume
+	cmpi.b #0,d0
+	bne .next_macro
+	move.b d1,t_psg_vol(a5)
+	
+	
+.next_macro
+	dbra d6,.macro_loop
+	
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; tell what channel we're on
+	lea k_chn_track(a6),a0
+	moveq #0,d0
+	move.b t_chn(a5),d0
+	move.b #AMT_TRACKS-1,d1
+	sub.b d7,d1
+	move.b d1,(a0,d0)
+	
+	
 .notrack:
 	adda.l #t_size,a5
 	dbra d7,.trackloop
+	
+	
+	
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; todo fm channel output
+	
+	
+	
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; psg channel output
+	
+	lea psg_period_tbl,a1
+	lea psg_volume_tbl,a2
+	lea PSG,a3
+	lea k_chn_track+10(a6),a4
+	
+	moveq #3,d7
+.psg_out_loop
+	;;get channel write mask
+	move.b d7,d6
+	lsl.b #5,d6
+	
+	;;is the channel occupied?
+	moveq #0,d0
+	move.b (a4,d7),d0
+	bpl .psg_out_ok
+.psg_out_kill:
+	ori.b #$9f,d6
+	move.b d6,(a3)
+	bra .psg_out_next
+.psg_out_ok:
+	
+	;;get track address
+	lea track_index_tbl,a5
+	lsl.l #1,d0
+	move.w (a5,d0),d0
+	lea (a6,d0),a5
+	
+	;;if track is keyed off stop here
+	btst.b #T_FLG_KEYOFF,t_flags(a5)
+	bne .psg_out_kill
+	
+	;;get volume
+	moveq #0,d0
+	move.b t_vol(a5),d0
+	lsl.b #4,d0
+	or.b t_psg_vol(a5),d0
+	move.b (a2,d0),d0
+	or.b d6,d0
+	ori.b #$90,d0
+	move.b d0,(a3)
+	
+	;;output the period
+	cmpi.b #3,d7 ;if this is the noise we need to do some extra stuff
+	bne .psg_out_per
+	
+	;temp stuff for now
+	move.b #$e7,d0
+	cmp.b k_psg_prv_noise(a6),d0
+	beq .no_psg_noise
+	move.b d0,k_psg_prv_noise(a6)
+	move.b d0,(a3)
+.no_psg_noise
+	
+	move.b #$40,d6
+	move.b #$ff,2(a4)
+	
+	
+.psg_out_per
+	moveq #0,d0
+	move.b t_note(a5),d0
+	lsl.l #1,d0
+	move.w (a1,d0),d0
+	move.b d0,d1
+	andi.b #$0f,d1
+	or.b d6,d1
+	ori.b #$80,d1
+	move.b d1,(a3)
+	lsr.w #4,d0
+	move.b d0,(a3)
+	
+	
+	
+	
+.psg_out_next
+	dbra d7,.psg_out_loop
+	
 	
 	
 	
@@ -470,6 +650,15 @@ kn_play::
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; data
+	
+track_index_tbl:
+	rept AMT_TRACKS
+		dw t_size*REPTN + k_tracks
+	endr
+	
+	
+	include "GENERATED-DATA.asm"
+	
 	
 z80_blob:
 	incbin "z80-player.bin"
