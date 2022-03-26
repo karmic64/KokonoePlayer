@@ -48,10 +48,18 @@ T_FLG_NOTE_RESET = 5
 t_flags so.b 1
 t_chn so.b 1
 
+t_song so.w 1
+
 t_speed1 so.b 1
 t_speed2 so.b 1
 t_speed_cnt so.b 1
 t_row so.b 1
+t_delay so.b 1
+t_legato so.b 1
+t_cut so.b 1
+t_smpl_bank so.b 1
+t_retrig so.b 1
+t_retrig_cnt so.b 1
 
 t_seq_base so.l 1
 t_order so.b 1
@@ -64,7 +72,25 @@ t_patt_index so.w 1
 ;;;
 t_instr so.w 1
 t_note so.b 1
+
 t_vol so.b 1
+t_pan so.b 1
+t_vol_slide so.b 1
+
+t_pitch so.w 1
+t_slide so.w 1
+t_slide_target so.b 1
+t_finetune so.b 1
+
+t_arp so.b 1
+t_arp_speed so.b 1
+t_arp_cnt so.b 1
+t_arp_phase so.b 1
+
+t_vib so.b 1
+t_vib_phase so.b 1
+t_vib_fine so.b 1
+t_vib_mode so.b 1
 
 
 ;;;
@@ -73,7 +99,8 @@ t_macros so.b mac_size*MACRO_SLOTS
 t_fm so.b fm_size
 
 t_psg_vol so.b 1
-	so.b 1
+
+t_dac_mode so.b 1
 
 t_size = __SO
 	
@@ -90,11 +117,57 @@ k_psg_prv_noise so.b 1
 k_fm_prv_chn3_keyon so.b 1
 k_fm_extd_chn3 so.b 1
 
+
+k_sync so.b 1
+
 KN_VAR_SIZE = __SO
 
 	public KN_VAR_SIZE
 	
 
+
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; effect enum
+	setso $c0
+EFF_ARP so.b 1
+EFF_PORTAUP so.b 1
+EFF_PORTADOWN so.b 1
+EFF_TONEPORTA so.b 1
+EFF_NOTEUP so.b 1
+EFF_NOTEDOWN so.b 1
+EFF_VIBRATO so.b 1
+EFF_PANNING so.b 1
+EFF_SPEED1 so.b 1
+EFF_SPEED2 so.b 1
+EFF_VOLSLIDE so.b 1
+EFF_POSJUMP so.b 1
+EFF_PATTBREAK so.b 1
+EFF_RETRIG so.b 1
+
+EFF_ARPTICK so.b 1
+EFF_VIBMODE so.b 1
+EFF_VIBDEPTH so.b 1
+EFF_FINETUNE so.b 1
+EFF_LEGATO so.b 1
+EFF_SMPLBANK so.b 1
+EFF_CUT so.b 1
+EFF_SYNC so.b 1
+
+EFF_LFO so.b 1
+EFF_FB so.b 1
+EFF_TL1 so.b 1
+EFF_TL2 so.b 1
+EFF_TL3 so.b 1
+EFF_TL4 so.b 1
+EFF_MUL so.b 1
+EFF_DAC so.b 1
+EFF_AR so.b 1
+EFF_AR1 so.b 1
+EFF_AR2 so.b 1
+EFF_AR3 so.b 1
+EFF_AR4 so.b 1
+
+EFF_NOISE so.b 1
 
 
 
@@ -233,6 +306,7 @@ kn_init::
 	move.b #$c0,t_flags(a5)
 	move.b (a1)+,d2
 	move.b d2,t_chn(a5)
+	move.w .arg_song_id+2(sp),t_song(a5)
 	move.b d4,t_speed1(a5)
 	move.b d5,t_speed2(a5)
 	move.b d5,t_speed_cnt(a5)
@@ -242,6 +316,8 @@ kn_init::
 	addq.b #1,t_dur_cnt(a5)
 	addq.w #2,t_patt_index(a5)
 	subq.w #1,t_instr(a5)
+	subq.b #1,t_slide_target(a5)
+	move.b #$80,t_finetune(a5)
 	
 	;depending on channel type, init volume
 	move.b #$7f,d0
@@ -1113,6 +1189,7 @@ track_index_tbl:
 fm_chn3_freq_reg_tbl:
 	db $ad,$ac,$ae,$a6
 	
+C_FNUM = 644
 fm_fnum_tbl:
 	dw 644,681,722,765,810,858,910,964,1021,1081,1146,1214
 	dw 644*2 ;this is only used when finetuning between B and the next octave's C
