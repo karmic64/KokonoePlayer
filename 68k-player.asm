@@ -373,6 +373,14 @@ kn_play::
 	
 	;;;;;;;;;;;;;;;;;;;;;;
 	;; check timers
+	move.b t_delay(a5),d0 ;any delay?
+	beq .nowaitdelay
+	cmp.b t_speed_cnt(a5),d0
+	bne .nonewsongdata
+	clr.b t_delay(a5)
+	bra .dosongdata
+	
+.nowaitdelay
 	moveq #0,d0 ;get speed value for this row
 	move.b t_row(a5),d0
 	andi.b #1,d0
@@ -385,8 +393,12 @@ kn_play::
 	subq.b #1,t_dur_cnt(a5)
 	bne .nonewsongdata
 	
+	clr.b t_retrig(a5)
+	clr.b t_cut(a5)
+	
 	;;;;;;;;;;;;;;;;;;;;;;
 	;; get pattern base
+.dosongdata
 	movea.l t_seq_base(a5),a0
 	moveq #0,d0
 	move.b t_order(a5),d0
@@ -409,8 +421,16 @@ kn_play::
 	;; delay
 	cmpi.b #$fe,d0
 	bne .noeffdelay
-	;todo delay
-	addq.l #1,a0
+	move.b (a0)+,d0
+	moveq #0,d1 ;get current row speed
+	move.b t_row(a5),d1
+	andi.b #1,d1
+	move.b (t_speed1,a5,d1),d1
+	cmp.b d1,d0
+	bhs .effdelaytoobig
+	move.b d0,t_delay(a5)
+	bra .nopattend
+.effdelaytoobig
 	move.b (a0)+,d0
 .noeffdelay
 	
@@ -435,15 +455,15 @@ kn_play::
 	movea.l (a1,d0),a1
 	
 	;read macros
-	move.b (a1)+,d5 ;instrument type
-	moveq #0,d6
-	move.b (a1)+,d6 ;macro amount
-	moveq #0,d4 ;macro counter
+	move.b (a1)+,d4 ;instrument type
+	moveq #0,d5
+	move.b (a1)+,d5 ;macro amount
+	moveq #0,d3 ;macro counter
 	lea t_macros(a5),a2
 	
 	
 .instrmacrosetloop:
-	cmp.b d6,d4
+	cmp.b d5,d3
 	bhs .instrmacclear
 	move.l (a1)+,(a2)+
 	bra .nextinstrmac
@@ -451,13 +471,13 @@ kn_play::
 	move.l #0,(a2)+
 .nextinstrmac
 	move.w #0,(a2)+
-	addq.b #1,d4
-	cmpi.b #MACRO_SLOTS,d4
+	addq.b #1,d3
+	cmpi.b #MACRO_SLOTS,d3
 	bne .instrmacrosetloop
 	
 	
 	;;read any extra data
-	cmpi.b #1,d5 ;fm instrument
+	cmpi.b #1,d4 ;fm instrument
 	bne .notfminstr
 	
 	;get fm patch address
