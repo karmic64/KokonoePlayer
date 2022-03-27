@@ -2070,6 +2070,10 @@ int read_module(char *filename)
 						if (out >= EFF_AR1 && out <= EFF_AR)
 							p &= 0x1f;
 						
+						/* legato is just on-or-off */
+						if (out == EFF_LEGATO)
+							p = (p == 1);
+						
 						cur_eff[out] = p;
 					}
 					

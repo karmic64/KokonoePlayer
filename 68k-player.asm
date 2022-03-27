@@ -812,6 +812,8 @@ kn_play::
 	add.b 1(a4),d0
 .gotnote
 	move.b d0,t_note(a5)
+	bsr get_note_pitch
+	move.w d0,t_pitch(a5)
 	
 	bclr.b #T_FLG_KEYOFF,t_flags(a5) ;undo keyoff
 	bset.b #T_FLG_NOTE_RESET,t_flags(a5)
@@ -1072,33 +1074,13 @@ kn_play::
 	
 	
 	;; write frequency
-	moveq #0,d0
-	moveq #0,d1
-	move.b t_note(a5),d0
-	lsl.l #1,d0
-	lea note_octave_tbl,a0
-	lea (a0,d0),a0
-	move.b (a0)+,d0 ;octave
-	move.b (a0)+,d1 ;note
-	lsl.l #1,d1 ;fnum
-	lea fm_fnum_tbl,a0
-	move.w (a0,d1),d1
-	
-	;get register value
-	lsl.l #8,d0
-	lsl.l #3,d0
-	or.l d1,d0
-	move.l d0,d1
-	lsr.l #8,d0
-	
-	;actually write it
 	lea fm_chn3_freq_reg_tbl,a0
 	move.b (a0,d7),d2
 	fm_reg_1 d2
-	fm_write_1 d0
+	fm_write_1 t_pitch(a5)
 	subq.b #4,d2
 	fm_reg_1 d2
-	fm_write_1 d1
+	fm_write_1 t_pitch+1(a5)
 	
 	
 	;;write key state
@@ -1146,7 +1128,7 @@ kn_play::
 	lea k_chn_track+0(a6),a0
 	move.b (a0,d7),d0
 	bpl .fm_out_go
-	cmpi.b #$fe,d0 ;if this channel was disabled be extd.chn3, do nothing
+	cmpi.b #$fe,d0 ;if this channel was disabled by extd.chn3, do nothing
 	beq .fm_out_next
 .fm_out_kill:
 	;set RRs of operators to $f
@@ -1266,33 +1248,13 @@ kn_play::
 	
 	
 	;; write frequency
-	moveq #0,d0
-	moveq #0,d1
-	move.b t_note(a5),d0
-	lsl.l #1,d0
-	lea note_octave_tbl,a0
-	lea (a0,d0),a0
-	move.b (a0)+,d0 ;octave
-	move.b (a0)+,d1 ;note
-	lsl.l #1,d1 ;fnum
-	lea fm_fnum_tbl,a0
-	move.w (a0,d1),d1
-	
-	;get register value
-	lsl.l #8,d0
-	lsl.l #3,d0
-	or.l d1,d0
-	move.l d0,d1
-	lsr.l #8,d0
-	
-	;actually write it
 	move.l d6,d2
 	ori.b #$a4,d2
 	fm_reg d2
-	fm_write d0
+	fm_write t_pitch(a5)
 	subq.b #4,d2
 	fm_reg d2
-	fm_write d1
+	fm_write t_pitch+1(a5)
 	
 	
 	
@@ -1343,7 +1305,6 @@ kn_play::
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; psg channel output
 	
-	lea psg_period_tbl,a1
 	lea psg_volume_tbl,a2
 	lea PSG,a3
 	lea k_chn_track+10(a6),a4
@@ -1401,10 +1362,12 @@ kn_play::
 	
 	
 .psg_out_per
-	moveq #0,d0
-	move.b t_note(a5),d0
-	lsl.l #1,d0
-	move.w (a1,d0),d0
+	move.w #$3ff,d1
+	move.w t_pitch(a5),d0
+	cmp.w d1,d0
+	bls .psg_out_no_3ff
+	move.w d1,d0
+.psg_out_no_3ff
 	move.b d0,d1
 	andi.b #$0f,d1
 	or.b d6,d1
@@ -1435,6 +1398,47 @@ kn_play::
 	movem.l (sp)+,d2-d7/a2-a6
 	rts
 	
+	
+	;;;;;;;;
+	;; note in d0
+	;; track in a5
+	;; returns pitch in d0.w
+get_note_pitch:
+	lsl.l #1,d0
+	cmpi.b #10,t_chn(a5)
+	bhs .psg
+	
+.fm
+	lea note_octave_tbl,a1
+	lea (a1,d0),a1
+	moveq #0,d0
+	moveq #0,d1
+	move.b (a1)+,d1 ;octave
+	move.b (a1)+,d0 ;note
+	
+	lea fm_fnum_tbl,a1
+	lsl.l #1,d0
+	move.w (a1,d0),d0
+	
+	;if the octave is negative, right shift the fnum
+	tst.b d1
+	bpl .fm_set
+	neg.b d1
+	lsr.w d1,d0
+	bra .fm_set2
+	
+.fm_set
+	lsl.l #8,d1
+	lsl.l #3,d1
+.fm_set2
+	or.w d1,d0
+	
+	rts
+	
+.psg
+	lea psg_period_tbl,a1
+	move.w (a1,d0),d0
+	rts
 	
 	
 	
