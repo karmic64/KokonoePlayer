@@ -252,25 +252,24 @@ typedef struct {
 
 
 const uint8_t effect_map[] = {
-	0,1,2,3,0xe1,0xe2,4,8,9,0xf,0xa,0xb,0xd,0xc,
+	1,2,0xe1,0xe2,3,0,4,8,9,0xf,0xa,0xb,0xc,
 	0xe0,0xe3,0xe4,0xe5,0xea,0xeb,0xec,0xee,
-	0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x19,0x1a,0x1b,0x1c,0x1d,
+	0x10,0x11,0x12,0x13,0x14,0x15,0x16,0x17,0x1a,0x1b,0x1c,0x1d,0x19,
 	0x20,
 	0xed
 };
 enum {
-	EFF_ARP = 0,
-	EFF_PORTAUP,
+	EFF_PORTAUP = 0,
 	EFF_PORTADOWN,
-	EFF_TONEPORTA,
 	EFF_NOTEUP,
 	EFF_NOTEDOWN,
+	EFF_TONEPORTA,
+	EFF_ARP,
 	EFF_VIBRATO,
 	EFF_PANNING,
 	EFF_SPEED1,
 	EFF_SPEED2,
 	EFF_VOLSLIDE,
-	EFF_POSJUMP,
 	EFF_PATTBREAK,
 	EFF_RETRIG,
 	
@@ -291,11 +290,11 @@ enum {
 	EFF_TL4,
 	EFF_MUL,
 	EFF_DAC,
-	EFF_AR,
 	EFF_AR1,
 	EFF_AR2,
 	EFF_AR3,
 	EFF_AR4,
+	EFF_AR,
 	
 	EFF_NOISE,
 	
@@ -2001,12 +2000,23 @@ int read_module(char *filename)
 					{
 						int c = row->effects[i].code;
 						int p = row->effects[i].param;
+						
+						/* turn D00 effects into BFF */
+						if (c == 0x0d && !p)
+						{
+							c = 0x0b;
+							p = 0xff;
+						}
+						
+						/*** process effect ***/
 						if (c == -1 || p == -1) continue;
+						
 						uint8_t *outp;
 						if (c < 0 || c > 0xff
 							|| p < 0 || p > 0xff
 							|| (c == 0x0d && p) /* Dxx with nonzero xx is not supported */
-							|| (c == 0x0b && p >= song.orders)
+							|| (c == 0x0b && p >= song.orders && p != 0xff)
+							|| (c == 0x16 && p < 0x10 && p > 0x4f)
 							|| (outp = memchr(effect_map, c, sizeof(effect_map)))==0)
 						{
 							printf("WARNING: Ignoring invalid/unsupported effect $%02X, param $%02X at channel %u, order %u, row %u, col %u\n",
@@ -2037,6 +2047,28 @@ int read_module(char *filename)
 							cur_eff[EFF_NOTEUP] = -1;
 							cur_eff[EFF_NOTEDOWN] = -1;
 						}
+						
+						/* represent panning like in the $b4 fm register */
+						if (out == EFF_PANNING)
+						{
+							unsigned l = p & 0xf0;
+							unsigned r = p & 0x0f;
+							p = (l ? 0xc0 : 0) | (r ? 0x80 : 0);
+						}
+						
+						/* index operator from 0 */
+						if (out == EFF_MUL)
+							p -= 0x10;
+						
+						/* force fm parameters in range */
+						if (out == EFF_FB)
+							p &= 7;
+						if (out >= EFF_TL1 && out <= EFF_TL4)
+							p &= 0x7f;
+						if (out == EFF_DAC)
+							p = (p == 1);
+						if (out >= EFF_AR1 && out <= EFF_AR)
+							p &= 0x1f;
 						
 						cur_eff[out] = p;
 					}

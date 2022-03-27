@@ -42,6 +42,7 @@ fm_size = __SO
 T_FLG_ON = 7
 T_FLG_KEYOFF = 6
 T_FLG_NOTE_RESET = 5
+T_FLG_PATT_SKIP = 4
 	
 	
 	clrso
@@ -99,8 +100,11 @@ t_macros so.b mac_size*MACRO_SLOTS
 t_fm so.b fm_size
 
 t_psg_vol so.b 1
+t_psg_noise so.b 1
 
 t_dac_mode so.b 1
+
+	so.b 1
 
 t_size = __SO
 	
@@ -116,6 +120,7 @@ k_psg_prv_noise so.b 1
 
 k_fm_prv_chn3_keyon so.b 1
 k_fm_extd_chn3 so.b 1
+k_fm_lfo so.b 1
 
 
 k_sync so.b 1
@@ -129,18 +134,17 @@ KN_VAR_SIZE = __SO
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; effect enum
 	setso $c0
-EFF_ARP so.b 1
 EFF_PORTAUP so.b 1
 EFF_PORTADOWN so.b 1
 EFF_TONEPORTA so.b 1
 EFF_NOTEUP so.b 1
 EFF_NOTEDOWN so.b 1
+EFF_ARP so.b 1
 EFF_VIBRATO so.b 1
 EFF_PANNING so.b 1
 EFF_SPEED1 so.b 1
 EFF_SPEED2 so.b 1
 EFF_VOLSLIDE so.b 1
-EFF_POSJUMP so.b 1
 EFF_PATTBREAK so.b 1
 EFF_RETRIG so.b 1
 
@@ -161,13 +165,15 @@ EFF_TL3 so.b 1
 EFF_TL4 so.b 1
 EFF_MUL so.b 1
 EFF_DAC so.b 1
-EFF_AR so.b 1
 EFF_AR1 so.b 1
 EFF_AR2 so.b 1
 EFF_AR3 so.b 1
 EFF_AR4 so.b 1
+EFF_AR so.b 1
 
 EFF_NOISE so.b 1
+
+MAX_EFFECT = __SO - 1
 
 
 
@@ -318,6 +324,7 @@ kn_init::
 	subq.w #1,t_instr(a5)
 	subq.b #1,t_slide_target(a5)
 	move.b #$80,t_finetune(a5)
+	move.b #$c0,t_pan(a5)
 	
 	;depending on channel type, init volume
 	move.b #$7f,d0
@@ -418,7 +425,7 @@ kn_play::
 	;; read pattern data
 	move.b (a0)+,d0
 	
-	;; delay
+	;;;;;;; delay
 	cmpi.b #$fe,d0
 	bne .noeffdelay
 	move.b (a0)+,d0
@@ -434,7 +441,7 @@ kn_play::
 	move.b (a0)+,d0
 .noeffdelay
 	
-	;; instrument
+	;;;;;;; instrument
 	cmpi.b #$fc,d0
 	blo .noinstrset
 	beq .shortinstr
@@ -503,7 +510,7 @@ kn_play::
 	move.b (a0)+,d0
 .noinstrset
 
-	;; volume
+	;;;;;;;;;;; volume
 	cmpi.b #$fb,d0
 	bne .novolset
 	move.b (a0)+,t_vol(a5)
@@ -511,16 +518,252 @@ kn_play::
 	move.b (a0)+,d0
 .novolset
 	
-	;; for now skip effects
-	bra .effdo
-.nexteff
-	move.b (a0)+,d0
-	move.b (a0)+,d0
-.effdo
-	cmpi.b #$c0,d0
-	bhs .nexteff
+	;;;;;;;;;;;;;;;; effects
 	
-	;; ok, we have the note column
+	;; 20xx psg noise
+	cmpi.b #EFF_NOISE,d0
+	bne .noeffnoise
+	move.b (a0)+,t_psg_noise(a5)
+	move.b (a0)+,d0
+.noeffnoise
+
+	;; 19xx global AR
+	move.b #$e0,d2
+	cmpi.b #EFF_AR,d0
+	bne .noeffar
+	move.b (a0)+,d0
+	lea t_fm+fm_50(a5),a1
+	rept 4
+		move.b (a1),d1
+		and.b d2,d1
+		or.b d0,d1
+		move.b d1,(a1)+
+	endr
+	move.b (a0)+,d0
+.noeffar
+
+	;; 1Axx-1Dxx operator AR
+	moveq #3,d6
+	move.b #EFF_AR4,d1
+	lea t_fm+fm_50+3(a5),a1
+.effarloop
+	cmp.b d1,d0
+	bne .noeffopar
+	move.b (a0)+,d0
+	move.b (a1),d1
+	and.b d2,d1
+	or.b d0,d1
+	move.b d1,(a1)
+	move.b (a0)+,d0
+.noeffopar
+	subq.b #1,d1
+	subq.l #1,a1
+	dbra d6,.effarloop
+	
+	;; 17xx dac mode
+	cmpi.b #EFF_DAC,d0
+	bne .noeffdac
+	move.b (a0)+,t_dac_mode(a5)
+	move.b (a0)+,d0
+.noeffdac
+	
+	;; 16xy mult
+	cmpi.b #EFF_MUL,d0
+	bne .noeffmul
+	move.b (a0)+,d0
+	moveq #0,d1
+	move.b d0,d1
+	lsr.l #4,d1
+	andi.b #$0f,d0
+	lea t_fm+fm_30(a5,d1),a1
+	move.b (a1),d1
+	andi.b #$f0,d1
+	or.b d0,d1
+	move.b d1,(a1)
+	move.b (a0)+,d0
+.noeffmul
+	
+	;; 12xx-15xx operator TL
+	moveq #3,d6
+	move.b #EFF_TL4,d1
+	lea t_fm+fm_40+3(a5),a1
+.efftlloop
+	cmp.b d1,d0
+	bne .noeffoptl
+	move.b (a0)+,(a1)
+	move.b (a0)+,d0
+.noeffoptl
+	subq.b #1,d1
+	subq.l #1,a1
+	dbra d6,.efftlloop
+	
+	;; 11xx feedback
+	cmpi.b #EFF_FB,d0
+	bne .noefffb
+	move.b (a0)+,d0
+	lsl.b #3,d0
+	lea t_fm+fm_b0(a5),a1
+	move.b (a1),d1
+	andi.b #$c7,d1
+	or.b d0,d1
+	move.b d1,(a1)
+	move.b (a0)+,d0
+.noefffb
+	
+	;; 10xy lfo
+	cmpi.b #EFF_LFO,d0
+	bne .noefflfo
+	move.b (a0)+,k_fm_lfo(a6)
+	move.b (a0)+,d0
+.noefflfo
+	
+	
+	
+	;;;;
+	
+	;; EExx sync
+	cmpi.b #EFF_SYNC,d0
+	bne .noeffsync
+	move.b (a0)+,k_sync(a6)
+	move.b (a0)+,d0
+.noeffsync
+	
+	;; ECxx cut
+	cmpi.b #EFF_CUT,d0
+	bne .noeffcut
+	move.b (a0)+,t_cut(a5)
+	move.b (a0)+,d0
+.noeffcut
+	
+	;; EBxx sample bank
+	cmpi.b #EFF_SMPLBANK,d0
+	bne .noeffsmplbank
+	move.b (a0)+,t_smpl_bank(a5)
+	move.b (a0)+,d0
+.noeffsmplbank
+	
+	;; EAxx legato
+	cmpi.b #EFF_LEGATO,d0
+	bne .noefflegato
+	move.b (a0)+,t_legato(a5)
+	move.b (a0)+,d0
+.noefflegato
+	
+	;; E5xx finetune
+	cmpi.b #EFF_FINETUNE,d0
+	bne .noefffinetune
+	move.b (a0)+,t_finetune(a5)
+	move.b (a0)+,d0
+.noefffinetune
+	
+	;; E4xx fine vib depth
+	cmpi.b #EFF_VIBDEPTH,d0
+	bne .noeffvibdepth
+	move.b (a0)+,t_vib_fine(a5)
+	move.b (a0)+,d0
+.noeffvibdepth
+	
+	;; E3xx vib mode
+	cmpi.b #EFF_VIBMODE,d0
+	bne .noeffvibmode
+	move.b (a0)+,t_vib_mode(a5)
+	move.b (a0)+,d0
+.noeffvibmode
+	
+	;; E0xx arp speed
+	cmpi.b #EFF_ARPTICK,d0
+	bne .noeffarptick
+	move.b (a0)+,t_arp_speed(a5)
+	move.b (a0)+,d0
+.noeffarptick
+	
+	
+	
+	;;;;;
+	
+	;; Cxx retrig
+	cmpi.b #EFF_RETRIG,d0
+	bne .noeffretrig
+	move.b (a0)+,t_retrig(a5)
+	move.b (a0)+,d0
+.noeffretrig
+	
+	
+	;; Bxx/Dxx pattern break
+	cmpi.b #EFF_PATTBREAK,d0
+	bne .noeffpattbreak
+	move.b (a0)+,d0
+	move.w t_song(a5),d1
+	
+	moveq #AMT_TRACKS-1,d6
+	lea k_tracks(a6),a1
+.effpattbreakloop
+	cmp.w t_song(a1),d1
+	bne .noeffpattbreaktrack
+	bset.b #T_FLG_PATT_SKIP,t_flags(a1)
+	
+.noeffpattbreaktrack
+	adda.l #t_size,a1
+	dbra d6,.effpattbreakloop
+	
+	move.b (a0)+,d0
+.noeffpattbreak
+	
+	
+	;; Axy volume slide
+	cmpi.b #EFF_VOLSLIDE,d0
+	bne .noeffvolslide
+	move.b (a0)+,t_vol_slide(a5)
+	move.b (a0)+,d0
+.noeffvolslide
+	
+	;; Fxx speed 2
+	cmpi.b #EFF_SPEED2,d0
+	bne .noeffspeed2
+	move.b (a0)+,t_speed2(a5)
+	move.b (a0)+,d0
+.noeffspeed2
+	
+	;; 9xx speed 1
+	cmpi.b #EFF_SPEED1,d0
+	bne .noeffspeed1
+	move.b (a0)+,t_speed1(a5)
+	move.b (a0)+,d0
+.noeffspeed1
+	
+	;; 8xx panning
+	cmpi.b #EFF_PANNING,d0
+	bne .noeffpan
+	move.b (a0)+,t_pan(a5)
+	move.b (a0)+,d0
+.noeffpan
+	
+	;; 4xy vibrato
+	cmpi.b #EFF_VIBRATO,d0
+	bne .noeffvib
+	move.b (a0)+,t_vib(a5)
+	move.b (a0)+,d0
+.noeffvib
+	
+	;; 0xy arpeggio
+	cmpi.b #EFF_ARP,d0
+	bne .noeffarp
+	move.b (a0)+,t_arp(a5)
+	move.b (a0)+,d0
+.noeffarp
+	
+	;; 1xx 2xx 3xx E1xy E2xy slides
+	cmpi.b #$c0,d0
+	blo .noeffslides
+	move.b (a0)+,d1
+	move.w d1,t_slide(a5)
+	
+	
+	move.b (a0)+,d0
+.noeffslides
+	
+	
+	;;;;;;;;;;; ok, we have the note column
 	
 	; get duration
 	cmpi.b #$a0,d0
@@ -582,7 +825,7 @@ kn_play::
 	
 .blanknote:
 	
-	;; is the pattern over?
+	;;;;;;;;;;;;;; is the pattern over?
 	cmpi.b #$ff,(a0)
 	bne .nopattend
 	
@@ -823,7 +1066,7 @@ kn_play::
 	fm_write_1 t_fm+fm_b0(a5)
 	fm_reg_1 #$b6
 	move.b t_fm+fm_b4(a5),d0
-	ori.b #$c0,d0
+	or.b t_pan(a5),d0
 	fm_write_1 d0
 .fm_3_no_global:
 	
@@ -1016,7 +1259,7 @@ kn_play::
 	addq.b #4,d0
 	fm_reg d0
 	move.b (a0)+,d1
-	ori.b #$c0,d1
+	or.b t_pan(a5),d1
 	fm_write d1
 	
 	
