@@ -1851,7 +1851,7 @@ int read_module(char *filename)
 	song.orders = orders;
 	
 	printf("Time base %i, speeds %u/%u\n", time_base, speed1, speed2);
-	time_base = time_base ? time_base : 1;
+	time_base += 1;
 	song.speed1 = speed1 * time_base;
 	song.speed2 = speed2 * time_base;
 	
@@ -2050,6 +2050,10 @@ int read_module(char *filename)
 							cur_eff[EFF_NOTEUP] = -1;
 							cur_eff[EFF_NOTEDOWN] = -1;
 						}
+						
+						/* multiply speeds by time base */
+						if (out == EFF_SPEED1 || out == EFF_SPEED2)
+							p *= time_base;
 						
 						/* represent panning like in the $b4 fm register */
 						if (out == EFF_PANNING)
