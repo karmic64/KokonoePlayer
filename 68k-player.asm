@@ -136,26 +136,26 @@ KN_VAR_SIZE = __SO
 	setso $c0
 EFF_PORTAUP so.b 1
 EFF_PORTADOWN so.b 1
-EFF_TONEPORTA so.b 1
 EFF_NOTEUP so.b 1
 EFF_NOTEDOWN so.b 1
-EFF_ARP so.b 1
-EFF_VIBRATO so.b 1
+EFF_TONEPORTA so.b 1
+EFF_ARP so.b 1 ;TODO: not implemented
+EFF_VIBRATO so.b 1 ;TODO: not implemented
 EFF_PANNING so.b 1
 EFF_SPEED1 so.b 1
 EFF_SPEED2 so.b 1
-EFF_VOLSLIDE so.b 1
-EFF_PATTBREAK so.b 1
-EFF_RETRIG so.b 1
+EFF_VOLSLIDE so.b 1 ;TODO: not implemented
+EFF_PATTBREAK so.b 1 ;TODO: not implemented
+EFF_RETRIG so.b 1 ;TODO: not implemented
 
 EFF_ARPTICK so.b 1
 EFF_VIBMODE so.b 1
 EFF_VIBDEPTH so.b 1
-EFF_FINETUNE so.b 1
-EFF_LEGATO so.b 1
-EFF_SMPLBANK so.b 1
-EFF_CUT so.b 1
-EFF_SYNC so.b 1
+EFF_FINETUNE so.b 1 ;TODO: not implemented
+EFF_LEGATO so.b 1 ;TODO: not implemented
+EFF_SMPLBANK so.b 1 ;TODO: sample channels not implemented
+EFF_CUT so.b 1 ;TODO: not implemented
+EFF_SYNC so.b 1 ;TODO: write sync access routine
 
 EFF_LFO so.b 1
 EFF_FB so.b 1
@@ -171,7 +171,7 @@ EFF_AR3 so.b 1
 EFF_AR4 so.b 1
 EFF_AR so.b 1
 
-EFF_NOISE so.b 1
+EFF_NOISE so.b 1 ;TODO: psg output routine needs to handle this
 
 MAX_EFFECT = __SO - 1
 
@@ -752,18 +752,22 @@ kn_play::
 	move.b (a0)+,d0
 .noeffarp
 	
-	;; 1xx 2xx 3xx E1xy E2xy slides
-	cmpi.b #$c0,d0
-	blo .noeffslides
-	move.b (a0)+,d1
-	move.w d1,t_slide(a5)
 	
-	
+	;; get pitch slide effect, we act on it later
+	moveq #0,d5 ;code in d5
+	cmpi.b #EFF_PORTAUP,d0
+	blo .notenopitcheff
+	move.b d0,d5
+	moveq #0,d6 ;param in d6
+	move.b (a0)+,d6
 	move.b (a0)+,d0
-.noeffslides
+.notenopitcheff
+	
+	
 	
 	
 	;;;;;;;;;;; ok, we have the note column
+	
 	
 	; get duration
 	cmpi.b #$a0,d0
@@ -801,6 +805,11 @@ kn_play::
 	bne .nonoteoff
 	
 	bset.b #T_FLG_KEYOFF,t_flags(a5)
+	
+	;apparently in furnace keyoffs disable slides
+	clr.w t_slide(a5)
+	move.b #$ff,t_slide_target(a5)
+	
 	bra .blanknote
 	
 .nonoteoff:
@@ -810,7 +819,23 @@ kn_play::
 	bra .gotnote
 .nolongnote:
 	add.b 1(a4),d0
-.gotnote
+.gotnote:
+	
+	;if there will be a toneportamento, DON'T reinit the note, just init a slide
+	cmpi.b #EFF_TONEPORTA,d5
+	beq .inittargetslide
+	
+.notoneporta:
+	;if there is already a targeted slide, just change the target
+	cmpi.b #$ff,t_slide_target(a5)
+	beq .noretarget
+	move.w t_slide(a5),d6
+	bpl .inittargetslide
+	neg.w d6
+	bra .inittargetslide
+	
+.noretarget
+	;init note as normal
 	move.b d0,t_note(a5)
 	bsr get_note_pitch
 	move.w d0,t_pitch(a5)
@@ -826,6 +851,50 @@ kn_play::
 	
 	
 .blanknote:
+	
+	;any other pitch effects?
+	tst.b d5
+	beq .afternote
+	moveq #0,d0
+	cmpi.b #EFF_PORTADOWN,d5
+	bls .effporta
+	
+.effnoteslide:
+	move.b d6,d0
+	andi.b #$f0,d6
+	lsr.b #2,d6
+	andi.b #$0f,d0
+	cmpi.b #EFF_NOTEDOWN,d5
+	bne .effnoteup
+	neg.b d0
+.effnoteup
+	add.b t_note(a5),d0
+	
+.inittargetslide:
+	;note is in d0, speed is in d6
+	move.b d0,t_slide_target(a5)
+	bsr get_note_pitch
+	cmp.w t_pitch(a5),d0
+	bhs .targetslideadd
+	neg.w d6
+.targetslideadd:
+	move.w d6,t_slide(a5)
+	
+	bra .effsetslide
+	
+	
+.effporta
+	bne .effportaup
+	neg.w d6
+.effportaup
+	move.b #$ff,t_slide_target(a5)
+	cmpi.b #10,t_chn(a5)
+	blo .effsetslide
+	neg.w d6
+.effsetslide
+	move.w d6,t_slide(a5)
+	
+.afternote:
 	
 	;;;;;;;;;;;;;; is the pattern over?
 	cmpi.b #$ff,(a0)
@@ -846,7 +915,6 @@ kn_play::
 	
 	
 .nonewsongdata:
-	addq.b #1,t_speed_cnt(a5)
 	
 	
 	
@@ -888,6 +956,76 @@ kn_play::
 	
 	
 	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; slides
+	move.w t_slide(a5),d2
+	beq .noslide
+	move.w t_pitch(a5),d3
+	
+	cmpi.b #10,t_chn(a5)
+	blo .slidefm
+	
+.slidepsg
+	add.w d2,d3
+	bra .afterslide
+	
+	;on fm we need to separate fnum and block, and keep the fnum in range
+.slidefm
+	move.w d3,d4
+	andi.w #$07ff,d3
+	andi.w #$f800,d4
+	add.w d2,d3
+	cmpi.w #C_FNUM,d3
+	blo .slidefmdown
+	cmpi.w #C_FNUM*2,d3
+	blo .afterslidefm
+	
+.slidefmup
+	lsr.w #1,d3
+	addi.w #$0800,d4
+	bra .afterslidefm
+	
+.slidefmdown
+	tst.w d4 ;if we are already on octave 0 don't push it down
+	beq .afterslidefm
+	lsl.w #1,d3
+	subi.w #$0800,d4
+	
+.afterslidefm
+	or.w d4,d3
+	
+.afterslide
+	;if the slide is targeted, check if we hit the note
+	moveq #0,d0
+	move.b t_slide_target(a5),d0
+	cmpi.b #$ff,d0
+	beq .setslide
+	bsr get_note_pitch
+	
+	tst.w d2
+	bmi .slidesub
+.slideadd
+	;we are adding. that means we hit the target when target <= pitch
+	cmp.w d3,d0
+	bls .hittarget
+	bra .setslide
+	
+.slidesub
+	;we are subtracting. that means we hit the target when target >= pitch
+	cmp.w d3,d0
+	blo .setslide
+	
+.hittarget
+	move.b t_slide_target(a5),t_note(a5)
+	move.b #$ff,t_slide_target(a5)
+	move.w d0,d3
+	clr.w t_slide(a5)
+	
+.setslide
+	move.w d3,t_pitch(a5)
+.noslide
+	
+	
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; tell what channel we're on
@@ -898,6 +1036,11 @@ kn_play::
 	sub.b d7,d1
 	move.b d1,(a0,d0)
 	
+	
+	
+	
+	
+	addq.b #1,t_speed_cnt(a5)
 	
 .notrack:
 	adda.l #t_size,a5

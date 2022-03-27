@@ -1888,7 +1888,7 @@ int read_module(char *filename)
 							if any volume change:
 								$fb $xx: volume $xx set
 							for each effect, rightmost same effect only, one of:
-								$c0-$fa $yy: effect code $xx-$d0, param $yy
+								$c0-$fa $yy: effect code $xx-$c0, param $yy
 							for note column, either one of:
 								$a9: off
 								$a8: blank
@@ -2037,6 +2037,9 @@ int read_module(char *filename)
 						
 						/* toneportamento has no effect if there is no note */
 						if (out == EFF_TONEPORTA && row->note==100) continue;
+						
+						/* note slides have no effect if the semitones is 0 */
+						if ((out == EFF_NOTEUP || out == EFF_NOTEDOWN) && !(p & 0x0f)) continue;
 						
 						/* some special exceptions: we only want ONE portamento */
 						if (out == EFF_PORTAUP || out == EFF_PORTADOWN || out == EFF_TONEPORTA || out == EFF_NOTEUP || out == EFF_NOTEDOWN)
@@ -2578,6 +2581,7 @@ int main(int argc, char *argv[])
 				fprintf(f,"$%02X,",di | no);
 				if (di == 0x80) fprintf(f,"$%02X,",dur);
 				if (no == 0x1d) fprintf(f,"$%02X,",c);
+				
 				
 				fputc(' ',f);
 			}

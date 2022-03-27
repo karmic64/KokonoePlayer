@@ -67,6 +67,7 @@ This measurement is slightly off when sliding farther though, so this should onl
 
 
 Toneportamento effects (E1xx and E2xx) don't behave quite right if another toneportamento is initiated before the current one can finish. I personally would expect the target notes to "add to" each other, but it actually just replaces the current target note. The current base note is only properly updated when the slide reaches the target.
+If a new note is started during a toneportamento, the note target is simply replaced, and the toneportamento is NOT cancelled.
 
 Toneportamento speeds are divided by 4 in comparison to regular slide speeds.
 
