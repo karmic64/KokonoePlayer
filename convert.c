@@ -2060,7 +2060,7 @@ int read_module(char *filename)
 						{
 							unsigned l = p & 0xf0;
 							unsigned r = p & 0x0f;
-							p = (l ? 0xc0 : 0) | (r ? 0x80 : 0);
+							p = (l ? 0x80 : 0) | (r ? 0x40 : 0);
 						}
 						
 						/* index operator from 0 */

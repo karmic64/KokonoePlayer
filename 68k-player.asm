@@ -11,6 +11,8 @@ AMT_TRACKS = 14
 
 AMT_CHANNELS = 14
 
+AMT_SONG_SLOTS = 4
+
 
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; RAM structure definitions
@@ -42,8 +44,7 @@ fm_size = __SO
 T_FLG_ON = 7
 T_FLG_KEYOFF = 6
 T_FLG_NOTE_RESET = 5
-T_FLG_PATT_SKIP = 4
-T_FLG_FM_UPDATE = 3
+T_FLG_FM_UPDATE = 4
 	
 	
 	clrso
@@ -69,7 +70,7 @@ t_song_size so.b 1
 
 t_dur_cnt so.b 1
 t_dur_save so.b 1
-t_patt_index so.w 1
+t_patt_index so.w 1 ;$ffxx means "go to order $xx immediately"
 
 ;;;
 t_instr so.w 1
@@ -110,9 +111,21 @@ t_dac_mode so.b 1
 t_size = __SO
 	
 	
+	
+	;pattern skip buffer entry
+	clrso
+pskip_song so.w 1
+pskip_order	so.b 1
+	so.b 1
+pskip_size = __SO
+	
+	
 	;all vars
 	clrso
 k_tracks so.b t_size*AMT_TRACKS
+
+
+k_pskips so.b pskip_size*AMT_SONG_SLOTS
 
 
 k_chn_track so.b AMT_CHANNELS
@@ -146,7 +159,7 @@ EFF_PANNING so.b 1
 EFF_SPEED1 so.b 1
 EFF_SPEED2 so.b 1
 EFF_VOLSLIDE so.b 1 ;TODO: not implemented
-EFF_PATTBREAK so.b 1 ;TODO: not implemented
+EFF_PATTBREAK so.b 1
 EFF_RETRIG so.b 1 ;TODO: not implemented
 
 EFF_ARPTICK so.b 1
@@ -246,6 +259,14 @@ kn_reset::
 .clearram:
 	move.l d0,(a5)+
 	dbra d7,.clearram
+	
+	
+	lea k_pskips(a6),a0
+	moveq #AMT_SONG_SLOTS-1,d7
+	moveq #-1,d0
+.clrpskiploop:
+	move.l d0,(a0)+
+	dbra d7,.clrpskiploop
 	
 	
 	move.b #2,k_fm_prv_chn3_keyon(a6)
@@ -396,11 +417,13 @@ kn_play::
 	cmp.b t_speed_cnt(a5),d0
 	bne .nonewsongdata
 	move.b #0,t_speed_cnt(a5)
-	addq.b #1,t_row(a5)
 	
+	;has the duration expired?
+	addq.b #1,t_row(a5)
 	subq.b #1,t_dur_cnt(a5)
 	bne .nonewsongdata
 	
+.newrow
 	clr.b t_retrig(a5)
 	clr.b t_cut(a5)
 	
@@ -702,19 +725,25 @@ kn_play::
 	cmpi.b #EFF_PATTBREAK,d0
 	bne .noeffpattbreak
 	move.b (a0)+,d0
-	move.w t_song(a5),d1
+	cmpi.b #$ff,d0
+	bne .effpattnonext
+	move.b t_order(a5),d0
+	addq.b #1,d0
+.effpattnonext
+	cmp.b t_song_size(a5),d0
+	bhs .aftereffpattbreak
 	
-	moveq #AMT_TRACKS-1,d6
-	lea k_tracks(a6),a1
-.effpattbreakloop
-	cmp.w t_song(a1),d1
-	bne .noeffpattbreaktrack
-	bset.b #T_FLG_PATT_SKIP,t_flags(a1)
+	lea k_pskips(a6),a1
+	bra .effpattbreakentry
+.effpattbreakloop:
+	addq.l #pskip_size,a1
+.effpattbreakentry:
+	tst.w pskip_song(a1)
+	bpl .effpattbreakloop
+	move.w t_song(a5),pskip_song(a1)
+	move.b d0,pskip_order(a1)
 	
-.noeffpattbreaktrack
-	adda.l #t_size,a1
-	dbra d6,.effpattbreakloop
-	
+.aftereffpattbreak
 	move.b (a0)+,d0
 .noeffpattbreak
 	
@@ -1558,6 +1587,35 @@ kn_play::
 	bclr.b #T_FLG_NOTE_RESET,t_flags(a5)
 	adda.l #t_size,a5
 	dbra d7,.unforce_keyon_loop
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; handle any pattern skips
+	lea k_pskips(a6),a0
+	moveq #AMT_SONG_SLOTS-1,d7
+	
+.patt_skip_loop
+	move.w pskip_song(a0),d0
+	bmi .patt_skip_next
+	move.b pskip_order(a0),d1
+	
+	lea k_tracks(a6),a5
+	move.w #AMT_TRACKS-1,d6
+.patt_skip_1_loop:
+	cmp.w t_song(a5),d0
+	bne .patt_skip_1_next
+	move.b d1,t_order(a5)
+	move.w #2,t_patt_index(a5)
+	move.b #1,t_dur_cnt(a5)
+.patt_skip_1_next:
+	adda.l #t_size,a5
+	dbra d6,.patt_skip_1_loop
+	
+	move.w #$ffff,pskip_song(a0)
+.patt_skip_next
+	adda.l #pskip_size,a0
+	dbra d7,.patt_skip_loop
 	
 	
 	
