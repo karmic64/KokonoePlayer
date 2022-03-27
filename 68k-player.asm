@@ -43,6 +43,7 @@ T_FLG_ON = 7
 T_FLG_KEYOFF = 6
 T_FLG_NOTE_RESET = 5
 T_FLG_PATT_SKIP = 4
+T_FLG_FM_UPDATE = 3
 	
 	
 	clrso
@@ -502,6 +503,8 @@ kn_play::
 	endr
 	move.w (a1)+,(a2)+
 	
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
+	
 .notfminstr
 	
 	
@@ -539,6 +542,7 @@ kn_play::
 		or.b d0,d1
 		move.b d1,(a1)+
 	endr
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
 	move.b (a0)+,d0
 .noeffar
 
@@ -554,6 +558,7 @@ kn_play::
 	and.b d2,d1
 	or.b d0,d1
 	move.b d1,(a1)
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
 	move.b (a0)+,d0
 .noeffopar
 	subq.b #1,d1
@@ -580,6 +585,7 @@ kn_play::
 	andi.b #$f0,d1
 	or.b d0,d1
 	move.b d1,(a1)
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
 	move.b (a0)+,d0
 .noeffmul
 	
@@ -591,6 +597,7 @@ kn_play::
 	cmp.b d1,d0
 	bne .noeffoptl
 	move.b (a0)+,(a1)
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
 	move.b (a0)+,d0
 .noeffoptl
 	subq.b #1,d1
@@ -607,6 +614,7 @@ kn_play::
 	andi.b #$c7,d1
 	or.b d0,d1
 	move.b d1,(a1)
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
 	move.b (a0)+,d0
 .noefffb
 	
@@ -614,6 +622,7 @@ kn_play::
 	cmpi.b #EFF_LFO,d0
 	bne .noefflfo
 	move.b (a0)+,k_fm_lfo(a6)
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
 	move.b (a0)+,d0
 .noefflfo
 	
@@ -1148,6 +1157,7 @@ kn_play::
 	move.b d0,k_fm_prv_chn3_keyon(a6)
 	fm_write_1 d0
 	
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
 	bra .fm_3_out_next
 	
 .fm_3_out_go:
@@ -1169,6 +1179,9 @@ kn_play::
 	fm_write_1 d0
 .fm_3_out_no_reset
 	
+	
+	bclr.b #T_FLG_FM_UPDATE,t_flags(a5)
+	beq .fm_3_no_patch
 	
 	;; write fm patch (but just for this operator)
 	lea t_fm(a5,d7),a0
@@ -1214,6 +1227,8 @@ kn_play::
 	or.b t_pan(a5),d0
 	fm_write_1 d0
 .fm_3_no_global:
+
+.fm_3_no_patch:
 	
 	
 	;; write frequency
@@ -1293,6 +1308,8 @@ kn_play::
 	;key off
 	fm_reg_1 #$28
 	fm_write_1 d5
+	
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
 	bra .fm_out_next
 .fm_out_go
 	
@@ -1312,6 +1329,10 @@ kn_play::
 .fm_out_no_reset
 	
 	
+	
+	
+	bclr.b #T_FLG_FM_UPDATE,t_flags(a5)
+	beq .fm_out_no_patch
 	
 	;; write fm patch
 	lea t_fm(a5),a0
@@ -1386,6 +1407,8 @@ kn_play::
 	move.b (a0)+,d1
 	or.b t_pan(a5),d1
 	fm_write d1
+	
+.fm_out_no_patch
 	
 	
 	
