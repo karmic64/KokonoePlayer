@@ -70,7 +70,7 @@ t_song_size so.b 1
 
 t_dur_cnt so.b 1
 t_dur_save so.b 1
-t_patt_index so.w 1 ;$ffxx means "go to order $xx immediately"
+t_patt_index so.w 1
 
 ;;;
 t_instr so.w 1
@@ -171,7 +171,7 @@ EFF_SMPLBANK so.b 1 ;TODO: sample channels not implemented
 EFF_CUT so.b 1 ;TODO: not implemented
 EFF_SYNC so.b 1 ;TODO: write sync access routine
 
-EFF_LFO so.b 1
+EFF_LFO so.b 1 ;TODO: not implemented
 EFF_FB so.b 1
 EFF_TL1 so.b 1
 EFF_TL2 so.b 1
@@ -620,7 +620,7 @@ kn_play::
 	cmp.b d1,d0
 	bne .noeffoptl
 	move.b (a0)+,(a1)
-	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
+	;bset.b #T_FLG_FM_UPDATE,t_flags(a5) ;tl is ALWAYS updated
 	move.b (a0)+,d0
 .noeffoptl
 	subq.b #1,d1
@@ -1221,28 +1221,19 @@ kn_play::
 	;mul/dt
 	fm_reg_1 d0
 	fm_write_1 (a0)
-	addq.l #4,a0
+	addq.l #8,a0
+	add.b d2,d0
 	add.b d2,d0
 	
-	;tl
-	moveq #0,d1
-	move.b t_vol(a5),d1
-	eori.b #$7f,d1
-	add.b (a0),d1
-	bpl .fm_3_no_tl
-	move.b #$7f,d1
-.fm_3_no_tl
-	fm_reg_1 d0
-	fm_write_1 d1
-	addq.l #4,a0
-	add.b d2,d0
-	
+	;everything else that isn't TL
 	rept 5
 		fm_reg_1 d0
 		fm_write_1 (a0)
 		addq.l #4,a0
 		add.b d2,d0
 	endr
+	
+.fm_3_no_patch:
 	
 	;ONLY write the global fm params for the highest channel
 	tst.b k_fm_extd_chn3(a6)
@@ -1256,8 +1247,20 @@ kn_play::
 	or.b t_pan(a5),d0
 	fm_write_1 d0
 .fm_3_no_global:
+	
+	;always write TL, since it could be changed at any moment by t_vol
+	move.l d6,d0
+	ori.b #$40,d0
+	moveq #0,d1
+	move.b t_vol(a5),d1
+	eori.b #$7f,d1
+	add.b t_fm+fm_40(a5,d7),d1
+	bpl .fm_3_no_tl
+	move.b #$7f,d1
+.fm_3_no_tl
+	fm_reg_1 d0
+	fm_write_1 d1
 
-.fm_3_no_patch:
 	
 	
 	;; write frequency
@@ -1375,7 +1378,35 @@ kn_play::
 		addq.b #4,d0
 	endr
 	
+	;SKIP TL, we always write it
+	addi.b #$10,d0
+	addq.l #4,a0
+	
+	;everything else that isn't TL
+	rept 5*4
+		fm_reg d0
+		fm_write (a0)+
+		addq.b #4,d0
+	endr
+	
+	;global
+	addi.b #$10,d0
+	fm_reg d0
+	fm_write (a0)+
+	addq.b #4,d0
+	fm_reg d0
+	move.b (a0)+,d1
+	or.b t_pan(a5),d1
+	fm_write d1
+	
+.fm_out_no_patch
+	
+	
 	;tl
+	move.l d6,d0
+	ori.b #$40,d0
+	lea t_fm+fm_40(a5),a0
+	
 	move.b t_vol(a5),d2 ;first get the tl add value
 	eori.b #$7f,d2
 	
@@ -1417,27 +1448,6 @@ kn_play::
 	add.b d2,d1
 	fm_reg d0
 	fm_write d1
-	addq.b #4,d0
-	
-	
-	;everything else
-	rept 5*4
-		fm_reg d0
-		fm_write (a0)+
-		addq.b #4,d0
-	endr
-	
-	;global
-	addi.b #$10,d0
-	fm_reg d0
-	fm_write (a0)+
-	addq.b #4,d0
-	fm_reg d0
-	move.b (a0)+,d1
-	or.b t_pan(a5),d1
-	fm_write d1
-	
-.fm_out_no_patch
 	
 	
 	
@@ -1649,12 +1659,11 @@ get_note_pitch:
 	bpl .fm_set
 	neg.b d1
 	lsr.w d1,d0
-	bra .fm_set2
+	rts
 	
 .fm_set
 	lsl.l #8,d1
 	lsl.l #3,d1
-.fm_set2
 	or.w d1,d0
 	
 	rts
