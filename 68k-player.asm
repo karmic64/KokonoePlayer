@@ -184,16 +184,16 @@ EFF_VOLSLIDE so.b 1 ;TODO: not implemented
 EFF_PATTBREAK so.b 1
 EFF_RETRIG so.b 1 ;TODO: not implemented
 
-EFF_ARPTICK so.b 1
-EFF_VIBMODE so.b 1
-EFF_VIBDEPTH so.b 1
+EFF_ARPTICK so.b 1 ;TODO: arp not implemented
+EFF_VIBMODE so.b 1 ;TODO: vib not implemented
+EFF_VIBDEPTH so.b 1 ;TODO: vib not implemented
 EFF_FINETUNE so.b 1 ;TODO: not implemented
-EFF_LEGATO so.b 1 ;TODO: not implemented
-EFF_SMPLBANK so.b 1 ;TODO: sample channels not implemented
+EFF_LEGATO so.b 1
+EFF_SMPLBANK so.b 1
 EFF_CUT so.b 1 ;TODO: not implemented
 EFF_SYNC so.b 1 ;TODO: write sync access routine
 
-EFF_LFO so.b 1 ;TODO: not implemented
+EFF_LFO so.b 1 ;TODO: fm output routine needs to handle this
 EFF_FB so.b 1
 EFF_TL1 so.b 1
 EFF_TL2 so.b 1
@@ -858,10 +858,9 @@ kn_play::
 	
 	; get note
 	andi.b #$1f,d0
-	cmpi.b #$1f,d0
-	beq .blanknote
 	cmpi.b #$1e,d0
-	bne .nonoteoff
+	blo .nonoteoff
+	bne .blanknote
 	
 	bset.b #T_FLG_KEYOFF,t_flags(a5)
 	
@@ -898,6 +897,10 @@ kn_play::
 	move.b d0,t_note(a5)
 	bsr get_note_pitch
 	move.w d0,t_pitch(a5)
+	
+	;if legato is on, just change the pitch
+	tst.b t_legato(a5)
+	bne .blanknote
 	
 	bclr.b #T_FLG_KEYOFF,t_flags(a5) ;undo keyoff
 	bset.b #T_FLG_NOTE_RESET,t_flags(a5)
