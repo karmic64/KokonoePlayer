@@ -235,6 +235,9 @@ typedef struct {
 	
 	/* table of indexes to the patterntbl, NOT the original module's orderlist */
 	unsigned short orderlist[MAX_CHANNELS][MAX_ORDERS];
+	
+	/* index to sample_map_tbl */
+	unsigned sample_map;
 } song_t;
 
 
@@ -526,6 +529,8 @@ int song_cmp(song_t *a, song_t *b)
 	{
 		if (memcmp(a->orderlist[c], b->orderlist[c], a->orders * sizeof(**a->orderlist))) return 1;
 	}
+	
+	if (a->sample_map != b->sample_map) return 1;
 	
 	return 0;
 }
@@ -2249,6 +2254,7 @@ int read_module(char *filename)
 	
 	
 	/************ we're done, add the song to the list *************/
+	song.sample_map = add_sample_map(&song_sample_map);
 	
 	unsigned proper_song_id = songs;
 	if (add_song(&song) != proper_song_id)
@@ -2454,8 +2460,10 @@ int main(int argc, char *argv[])
 		
 		fprintf(f,"kn_song_%u: db %u,%u,%u,0\n", i, s->speed1,s->speed2,s->pattern_size);
 		fprintf(f,
+			" dw %u\n"
 			" db %u,%u\n"
 			" db "
+				, s->sample_map
 				, s->channels,s->orders);
 		for (unsigned j = 0; j < s->channels; j++)
 			fprintf(f,"%u%c", s->channel_arrangement[j], (j < (unsigned)s->channels-1)?',':'\n');
@@ -2686,6 +2694,23 @@ int main(int argc, char *argv[])
 	}
 	fputc('\n', f);
 	
+	/* sample maps */
+	fprintf(f,
+		" align 1\n"
+		"kn_sample_map_tbl:");
+	fprintf(f, " dl ");
+	for (unsigned i = 0; i < sample_maps; i++)
+		fprintf(f,"kn_sample_map_%u%c", i, (i < sample_maps-1)?',':'\n');
+	
+	for (unsigned i = 0; i < sample_maps; i++)
+	{
+		sample_map_t *s = &sample_map_tbl[i];
+		fprintf(f,"kn_sample_map_%u: dw ",i);
+		for (unsigned j = 0; j < AMT_NOTES; j++)
+			fprintf(f, "%u%c", (*s)[j], (j < AMT_NOTES-1)?',':'\n');
+	}
+	fputc('\n', f);
+	
 	/* samples */
 	fprintf(f,
 		" align 1\n"
@@ -2700,22 +2725,30 @@ int main(int argc, char *argv[])
 		{
 			sample_t *s = &sample_tbl[i];
 			/*
-				"rate" is the timer A frequency of the center rate
-				timer A clocks every 18.77us
+				this value is determined through trial and error and
+				will break if the z80 driver is changed
 			*/
-			unsigned rate = round((1.0 / 0.00001877) / (double)s->rate);
-			unsigned center_rate = round((1.0 / 0.00001877) / (double)s->center_rate);
+#define Z80_SAMPLE_RATE (3579545.0 / 101.0)
+			unsigned rate = round(((double)s->rate / Z80_SAMPLE_RATE) * 256.0);
+			unsigned center_rate = round(((double)s->center_rate / Z80_SAMPLE_RATE) * 256.0);
 			
 			fprintf(f,
-				"kn_smpl_%u: dl %u,%u\n"
+				"kn_smpl_%u: dl %u\n"
 				" dw %u,%u\n"
-				, i, s->length, s->loop, rate,center_rate);
+				, i, s->loop, rate,center_rate);
 			if (s->length)
 			{
 				fprintf(f," db ");
 				for (unsigned j = 0; j < s->length; j++)
-					fprintf(f, "%u%c", ((uint8_t*)databuf)[s->data_index+j], (j < s->length-1)?',':'\n');
+				{
+					uint8_t sd = ((uint8_t*)databuf)[s->data_index+j];
+					/* 0 is the end marker, 0 should never appear in sample data */
+					fprintf(f, "%u,",sd ? sd : 1);
+				}
 			}
+			fprintf(f,
+				" 0,0,0,0,0,0,0,0\n"
+				" align 1\n");
 		}
 	}
 	

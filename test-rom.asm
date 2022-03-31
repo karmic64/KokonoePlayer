@@ -109,6 +109,44 @@ SetVDPRegsA macro
 	dl $ffff8000
 	dl reset
 	
+    dl ex_bus_error
+    dl ex_address_error
+    dl ex_illegal_instruction
+    dl ex_division_by_zero
+    dl ex_chk
+    dl ex_trapv
+    dl ex_privilege_violation
+    dl ex_trace
+    dl ex_unimplemented_a
+    dl ex_unimplemented_f
+    org $3c
+    dl ex_uninitialized
+    org $60
+    dl ex_i0
+    dl ex_i1
+    dl ex_i2
+    dl ex_i3
+    dl ex_i4
+    dl ex_i5
+    dl ex_i6
+    dl ex_i7
+    dl ex_trap0
+    dl ex_trap1
+    dl ex_trap2
+    dl ex_trap3
+    dl ex_trap4
+    dl ex_trap5
+    dl ex_trap6
+    dl ex_trap7
+    dl ex_trap8
+    dl ex_trap9
+    dl ex_trap10
+    dl ex_trap11
+    dl ex_trap12
+    dl ex_trap13
+    dl ex_trap14
+    dl ex_trap15
+	
 	org $100
 	db "SEGA MEGA DRIVE "
 	db "KARMIC  2022.MAR"
@@ -123,6 +161,10 @@ SetVDPRegsA macro
 	db "            "
 	db "                                        "
 	db "U               "
+	
+	
+	
+	include "exceptions.asm"
 	
 	
 reset:
@@ -140,7 +182,7 @@ reset:
 	addq.l #4,sp
 	
 	
-	move.l #0,-(sp)
+	move.l #3,-(sp)
 	move.l #$ffff0000,-(sp)
 	bsr kn_init
 	addq.l #8,sp

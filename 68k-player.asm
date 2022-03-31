@@ -53,6 +53,8 @@ t_chn so.b 1
 
 t_song so.w 1
 
+t_sample_map so.w 1
+
 t_speed1 so.b 1
 t_speed2 so.b 1
 t_speed_cnt so.b 1
@@ -142,6 +144,26 @@ k_sync so.b 1
 KN_VAR_SIZE = __SO
 
 	public KN_VAR_SIZE
+	
+	
+	
+	; z80-side variables
+z80_base = Z80 + $1ff0
+
+	clrso
+z80_start_flag so.b 1
+z80_cur_reg so.b 1
+
+z80_start_lo so.b 1
+z80_start_hi so.b 1
+z80_start_bank so.b 1
+
+z80_loop_lo so.b 1
+z80_loop_hi so.b 1
+z80_loop_bank so.b 1
+
+z80_rate_lo so.b 1
+z80_rate_hi so.b 1
 	
 
 
@@ -297,15 +319,11 @@ kn_init::
 	lsl.l #2,d0
 	movea.l (a0,d0),a0
 	
-	;;; get global song parameters
-	move.b (a0)+,d4 ;speed 1
-	move.b (a0)+,d5 ;speed 2
-	move.b (a0)+,d6 ;pattern size
-	addq.l #1,a0
-	moveq #0,d7 ;tracks in song
-	move.b (a0)+,d7
-	moveq #0,d3 ;orders in song
-	move.b (a0)+,d3
+	;;; get global song parameters in a2
+	movea.l a0,a2
+	moveq #0,d7
+	move.b 6(a0),d7
+	adda.l #8,a0
 	
 	movea.l a0,a1 ;channel arrangement table
 	adda.l d7,a0
@@ -335,10 +353,13 @@ kn_init::
 	move.b (a1)+,d2
 	move.b d2,t_chn(a5)
 	move.w .arg_song_id+2(sp),t_song(a5)
-	move.b d4,t_speed1(a5)
-	move.b d5,t_speed2(a5)
-	move.b d5,t_speed_cnt(a5)
+	move.w 4(a2),t_sample_map(a5)
+	move.b 0(a2),t_speed1(a5)
+	move.b 1(a2),t_speed2(a5)
+	move.b 1(a2),t_speed_cnt(a5)
 	subq.b #1,t_row(a5)
+	moveq #0,d3
+	move.b 7(a2),d3
 	move.b d3,t_song_size(a5)
 	move.l a0,t_seq_base(a5)
 	addq.b #1,t_dur_cnt(a5)
@@ -1114,13 +1135,13 @@ kn_play::
 	
 	macro fm_write
 .fm_write_wait_\@:
-		tst.b (a2)
+		tst.b (a3)
 		bmi .fm_write_wait_\@
 		move.b \1,(a2)
 	endm
 	macro fm_write_1
 .fm_write_1_wait_\@:
-		tst.b (a4)
+		tst.b (a3)
 		bmi .fm_write_1_wait_\@
 		move.b \1,(a4)
 	endm
@@ -1153,7 +1174,7 @@ kn_play::
 	
 .do_fm_3_out:
 	;ok, turn on extd.chn3
-	fm_write_1 #$55
+	fm_write_1 #$40
 	
 	move.b #$fe,k_chn_track+2(a6)
 	move.b #$ff,k_fm_extd_chn3(a6)
@@ -1295,7 +1316,7 @@ kn_play::
 .no_fm_3_out:
 
 	;no, turn off extd. chn3
-	fm_write_1 #$15
+	fm_write_1 #0
 
 	
 	;;;;;;;;;;;;;;;;;;; standard fm out
@@ -1341,6 +1362,12 @@ kn_play::
 	fm_reg_1 #$28
 	fm_write_1 d5
 	
+	;disable dac
+	cmpi.b #5,d7
+	bne .fm_kill_no_dac
+	move.b #$ff,z80_base+z80_start_flag
+.fm_kill_no_dac
+	
 	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
 	bra .fm_out_next
 .fm_out_go
@@ -1351,6 +1378,109 @@ kn_play::
 	move.w (a5,d0),d0
 	lea (a6,d0),a5
 	
+	
+	;; handle dac channel
+	cmpi.b #5,d7
+	bne .fm_out_no_dac
+	
+	tst.b t_dac_mode(a5)
+	beq .fm_out_disable_dac
+	
+	;write panning
+	fm_reg #$b6
+	fm_write t_pan(a5)
+	
+	btst.b #T_FLG_NOTE_RESET,t_flags(a5) ;if there is a new note, init the sample
+	beq .fm_out_next
+	
+	; get sample index ((note % 12) + (samplebank * 12))
+	moveq #0,d0
+	moveq #0,d1
+	move.b t_note(a5),d0
+	move.b t_smpl_bank(a5),d1
+	move.l d1,d2
+	
+	lsl.l #1,d0
+	lea note_octave_tbl,a0
+	move.b 1(a0,d0),d0
+	andi.w #$00ff,d0
+	
+	lsl.l #3,d1
+	lsl.l #2,d2
+	add.l d2,d1
+	
+	add.l d1,d0
+	
+	;get sample map
+	moveq #0,d1
+	move.w t_sample_map(a5),d1
+	lsl.l #2,d1
+	lea kn_sample_map_tbl,a0
+	movea.l (a0,d1),a0
+	
+	;get sample id
+	lsl.l #1,d0
+	move.w (a0,d0),d0
+	
+	;get sample pointer
+	lsl.l #2,d0
+	lea kn_sample_tbl,a0
+	movea.l (a0,d0),a0
+	
+	move.l (a0)+,d2 ;loop
+	move.w (a0)+,d3 ;rate
+	addq.l #2,a0 ;skip center rate
+	
+	move.l a0,d0 ;sample base
+	tst.l d2
+	bmi .fm_dac_no_add_loop
+	add.l d0,d2
+.fm_dac_no_add_loop:
+	
+	lea z80_base,a0
+	move.b #1,z80_start_flag(a0)
+	
+	;set start pointer on z80 side
+	lea z80_start_lo(a0),a0
+	move.b d0,(a0)+
+	lsr.l #8,d0
+	move.b d0,d4
+	ori.b #$80,d4
+	move.b d4,(a0)+
+	lsr.l #7,d0
+	move.b d0,(a0)+
+	
+	;set loop pointer on z80 side
+	tst.l d2
+	bmi .fm_dac_no_loop
+	move.b d2,(a0)+
+	lsr.l #8,d2
+	move.b d2,d4
+	ori.b #$80,d4
+	move.b d4,(a0)+
+	lsr.l #7,d2
+	move.b d2,(a0)+
+	bra .fm_dac_after_loop
+	
+.fm_dac_no_loop
+	clr.b (a0)+
+	clr.b (a0)+
+	clr.b (a0)+
+.fm_dac_after_loop:
+	
+	;rate
+	move.b d3,(a0)+
+	lsr.l #8,d3
+	move.b d3,(a0)
+	
+	
+	
+	bra .fm_out_next
+	
+.fm_out_disable_dac:
+	move.b #$ff,z80_base+z80_start_flag
+	
+.fm_out_no_dac:
 	
 	
 	;; if the note will be reset, keyoff first
@@ -1393,13 +1523,16 @@ kn_play::
 	addi.b #$10,d0
 	fm_reg d0
 	fm_write (a0)+
-	addq.b #4,d0
-	fm_reg d0
-	move.b (a0)+,d1
-	or.b t_pan(a5),d1
-	fm_write d1
 	
 .fm_out_no_patch
+	
+	;panning
+	move.l d6,d0
+	ori.b #$b4,d0
+	fm_reg d0
+	move.b t_fm+fm_b4(a5),d1
+	or.b t_pan(a5),d1
+	fm_write d1
 	
 	
 	;tl
@@ -1493,6 +1626,9 @@ kn_play::
 	dbra d7,.fm_out_loop
 	
 	
+	
+	lea z80_base,a0
+	fm_reg_1 z80_cur_reg(a0)
 	
 	move.w #0,Z80BUSREQ ;release the bus
 	
@@ -1692,7 +1828,6 @@ fm_chn3_freq_reg_tbl:
 C_FNUM = 644
 fm_fnum_tbl:
 	dw 644,681,722,765,810,858,910,964,1021,1081,1146,1214
-	dw 644*2 ;this is only used when finetuning between B and the next octave's C
 	
 	
 	include "GENERATED-DATA.asm"

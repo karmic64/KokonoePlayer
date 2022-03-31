@@ -21,88 +21,161 @@ banks 1
 .define PSG $7f11
 
 
-.define STACK_POINTER $1800
+.define STACK_POINTER $1ff0
 
 	.enum STACK_POINTER
-part1_reg_buf dsb $100
-part1_val_buf dsb $100
+start_flag db
+cur_reg db
 
-part2_reg_buf dsb $100
-part2_val_buf dsb $100
+start_lo db
+start_hi db
+start_bank db
 
-part1_buf_end db
-part2_buf_end db
+loop_lo db
+loop_hi db
+loop_bank db
+
+rate_lo db
+rate_hi db
 	.ende
 
 
 	.orga 0
 	di
-	im 1
 	ld sp,STACK_POINTER
-	jr reset
+	jp reset
+	
+	
+	.orga 8
+write_reg:
+	push hl
+	ld hl,FM1REG
+	ld (cur_reg),a
+	ld (hl),a
+@wait:
+	bit 7,(hl)
+	jr nz,@wait
+	inc l
+	ld (hl),b
+	pop hl
+	ret
 	
 	
 	
 	
+	.orga $18
+	;trashes a
+set_bank:
+	exx
+	ld hl,BANK
+	ld (hl),a
+	rrca
+	ld (hl),a
+	rrca
+	ld (hl),a
+	rrca
+	ld (hl),a
+	rrca
+	ld (hl),a
+	rrca
+	ld (hl),a
+	rrca
+	ld (hl),a
+	rrca
+	ld (hl),a
+	ld (hl),0
+	exx
+	ret
 	
-	.orga $40
+	
+	
+	
 reset:
 	
 	
+kill_sample:
+	ld a,$2b
+	ld b,0
+	rst write_reg
 	
 	
-	ld bc,part1_reg_buf
-	ld de,part2_reg_buf
+	;;; idle loop. right now we are waiting for the 68k to give us a command
+	ld hl,start_flag
+idle_loop:
+	ld a,(hl)
+	or a
+	jr z,idle_loop
 	
-mainloop:
-	ld hl,part1_buf_end
-	jr @part1_check
-@part1_loop:
-	ld a,(bc)
+	;;; got command
+do_command:
+	ld hl,start_flag
+	ld (hl),0
+	
+	rlca
+	jr c,kill_sample ;$80+, kill sample and disable dac mode
+	
+	;otherwise start the sample
+	ld a,(start_bank) ;bank in b
+	ld b,a
+	rst set_bank
+	
+	ld hl,(start_lo) ;address in hl
+	
+	ld c,0 ;rate accumulator in c
+	ld a,(rate_hi) ;rate hi-byte in de
+	ld e,a
+	ld d,0
+	
+	
+	ld a,$2b ;enable dac
+	ld b,$80
+	rst write_reg
+	ld a,$2a ;set register to dac
+	ld (cur_reg),a
 	ld (FM1REG),a
+	
+	
+	;;; now we are ready to hammer samples into the dac
+sample_loop:
+	;if there is a command, do it
+	ld a,(start_flag)
+	or a
+	jr nz,do_command
+	
+	;otherwise play a sample
+	ld a,(hl)
+	or a
+	jr z,sample_end ;is the sample over?
+	ld (FM1DATA),a
+	
+	;step the pointer
+	ld a,(rate_lo)
+	add a,c
+	ld c,a
+	adc hl,de
+	jp nc,sample_loop
+	
+	;if needed, step the bank
 	inc b
-	ld a,(bc)
-	ld (FM1DATA),a
-	dec b
-	inc c
-	nop
-	nop
-	nop
-@part1_check:
-	ld a,c
-	cp (hl)
-	jr nz,@part1_loop
+	ld a,b
+	rst set_bank
+	set 7,h
 	
-	ld hl,part2_buf_end
-	jr @part2_check
-@part2_loop:
-	ld a,(de)
-	inc d
-	cp $30
-	jr c,@part2_long
-	ld (FM2REG),a
-	ld a,(de)
-	ld (FM2DATA),a
-@part2_return:
-	dec d
-	inc e
-	nop
-	nop
-	nop
-@part2_check:
-	ld a,e
-	cp (hl)
-	jr nz,@part2_loop
-	
-	jr mainloop
+	jp sample_loop
 	
 	
-@part2_long:
-	ld (FM1REG),a
-	ld a,(de)
-	ld (FM1DATA),a
-	jr @part2_return
+sample_end:
+	ld a,(loop_hi) ;does the sample loop?
+	or a
+	jr z,kill_sample ;if not, go back to idling
 	
+	;otherwise loop
+	ld a,(loop_bank)
+	ld b,a
+	rst set_bank
+	ld hl,(loop_lo)
+	
+	jp sample_loop
 	
 	
 	
