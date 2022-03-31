@@ -115,6 +115,14 @@ do_command:
 	jr c,kill_sample ;$80+, kill sample and disable dac mode
 	
 	;otherwise start the sample
+	ld a,$2b ;enable dac
+	ld b,$80
+	rst write_reg
+	ld a,$2a ;set register to dac
+	ld (cur_reg),a
+	ld (FM1REG),a
+	
+	
 	ld a,(start_bank) ;bank in b
 	ld b,a
 	rst set_bank
@@ -126,13 +134,6 @@ do_command:
 	ld e,a
 	ld d,0
 	
-	
-	ld a,$2b ;enable dac
-	ld b,$80
-	rst write_reg
-	ld a,$2a ;set register to dac
-	ld (cur_reg),a
-	ld (FM1REG),a
 	
 	
 	;;; now we are ready to hammer samples into the dac
