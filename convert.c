@@ -2060,6 +2060,14 @@ int read_module(char *filename)
 						if (out == EFF_SPEED1 || out == EFF_SPEED2)
 							p *= time_base;
 						
+						/* invalid vibrato mode values act like 0 */
+						if (out == EFF_VIBMODE && p > 2)
+							p = 0;
+						
+						/* turn finetune into signed 8-bit */
+						if (out == EFF_FINETUNE)
+							p ^= 0x80;
+						
 						/* represent panning like in the $b4 fm register */
 						if (out == EFF_PANNING)
 						{

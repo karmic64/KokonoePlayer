@@ -5,6 +5,7 @@ Z80RESET = $a11200
 PSG = $c00011
 
 
+	include "COMPILED-MODULE.asm"
 
 
 AMT_TRACKS = 14
@@ -175,19 +176,19 @@ EFF_PORTADOWN so.b 1
 EFF_NOTEUP so.b 1
 EFF_NOTEDOWN so.b 1
 EFF_TONEPORTA so.b 1
-EFF_ARP so.b 1 ;TODO: not implemented
-EFF_VIBRATO so.b 1 ;TODO: not implemented
+EFF_ARP so.b 1
+EFF_VIBRATO so.b 1
 EFF_PANNING so.b 1
-EFF_SPEED1 so.b 1
-EFF_SPEED2 so.b 1
+EFF_SPEED1 so.b 1 ;BUGGY: this should change the speed of ALL tracks in the song
+EFF_SPEED2 so.b 1 ;BUGGY: this should change the speed of ALL tracks in the song
 EFF_VOLSLIDE so.b 1 ;TODO: not implemented
 EFF_PATTBREAK so.b 1
 EFF_RETRIG so.b 1 ;TODO: not implemented
 
-EFF_ARPTICK so.b 1 ;TODO: arp not implemented
-EFF_VIBMODE so.b 1 ;TODO: vib not implemented
-EFF_VIBDEPTH so.b 1 ;TODO: vib not implemented
-EFF_FINETUNE so.b 1 ;TODO: not implemented
+EFF_ARPTICK so.b 1
+EFF_VIBMODE so.b 1
+EFF_VIBDEPTH so.b 1
+EFF_FINETUNE so.b 1
 EFF_LEGATO so.b 1
 EFF_SMPLBANK so.b 1
 EFF_CUT so.b 1 ;TODO: not implemented
@@ -366,8 +367,9 @@ kn_init::
 	addq.w #2,t_patt_index(a5)
 	subq.w #1,t_instr(a5)
 	subq.b #1,t_slide_target(a5)
-	move.b #$80,t_finetune(a5)
 	move.b #$c0,t_pan(a5)
+	addq.b #1,t_arp_speed(a5)
+	move.b #$0f,t_vib_fine(a5)
 	
 	;depending on channel type, init volume
 	move.b #$7f,d0
@@ -507,12 +509,15 @@ kn_play::
 	movea.l (a1,d0),a1
 	
 	;read macros
+	
 	move.b (a1)+,d4 ;instrument type
 	moveq #0,d5
 	move.b (a1)+,d5 ;macro amount
+	
+	if MACRO_SLOTS > 0
+	
 	moveq #0,d3 ;macro counter
 	lea t_macros(a5),a2
-	
 	
 .instrmacrosetloop:
 	cmp.b d5,d3
@@ -526,6 +531,8 @@ kn_play::
 	addq.b #1,d3
 	cmpi.b #MACRO_SLOTS,d3
 	bne .instrmacrosetloop
+	
+	endif
 	
 	
 	;;read any extra data
@@ -897,6 +904,7 @@ kn_play::
 	move.b d0,t_note(a5)
 	bsr get_note_pitch
 	move.w d0,t_pitch(a5)
+	clr.b t_vib_phase(a5)
 	
 	;if legato is on, just change the pitch
 	tst.b t_legato(a5)
@@ -904,12 +912,17 @@ kn_play::
 	
 	bclr.b #T_FLG_KEYOFF,t_flags(a5) ;undo keyoff
 	bset.b #T_FLG_NOTE_RESET,t_flags(a5)
+	
+	if MACRO_SLOTS > 0
+	
 	lea t_macros+mac_index(a5),a1 ;restart all macros
 	move.w #MACRO_SLOTS-1,d0
 .notemacclear
 	move.w #0,(a1)+
 	addq.l #4,a1
 	dbra d0,.notemacclear
+	
+	endif
 	
 	
 .blanknote:
@@ -983,6 +996,8 @@ kn_play::
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; handle macros
+	if MACRO_SLOTS > 0
+	
 	move.w #MACRO_SLOTS-1,d6
 	lea t_macros(a5),a4
 	
@@ -1015,6 +1030,8 @@ kn_play::
 	
 .next_macro
 	dbra d6,.macro_loop
+	
+	endif
 	
 	
 	
@@ -1086,6 +1103,38 @@ kn_play::
 .setslide
 	move.w d3,t_pitch(a5)
 .noslide
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; arp
+	tst.b t_arp(a5)
+	beq .noarp
+	
+	move.b t_arp_cnt(a5),d0
+	move.b t_arp_phase(a5),d1
+	
+	addq.b #1,d0
+	cmp.b t_arp_speed(a5),d0
+	blo .setarpcnt
+	moveq #0,d0
+	addq.b #1,d1
+	cmpi.b #3,d1
+	blo .setarp
+	moveq #0,d1
+	
+.setarp
+	move.b d1,t_arp_phase(a5)
+.setarpcnt
+	move.b d0,t_arp_cnt(a5)
+.noarp
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; vibrato
+	move.b t_vib(a5),d0
+	lsr.b #4,d0
+	add.b d0,t_vib_phase(a5)
 	
 	
 	
@@ -1185,12 +1234,22 @@ kn_play::
 	
 	moveq #3,d7
 .fm_3_out_loop:
+	;ok, so this part is kind of stupid. usually, fm operators are sorted in
+	;_register_ order. but i guess it would be confusing if the user is editing
+	;instruments and he finds that 2 and 3 are swapped, so when dealing with extd.chn3
+	;the channels are in operator order.
+	
 	; get operator index
 	move.l d7,d6
+	beq .fm_3_out_nofix
+	cmpi.b #3,d6
+	beq .fm_3_out_nofix
+	eori.b #3,d6
+.fm_3_out_nofix
+	move.l d6,d5
 	lsl.b #2,d6
 	addq.b #2,d6
 	; get keyoff bit
-	move.l d7,d5
 	addq.b #4,d5
 	
 	moveq #0,d0
@@ -1288,13 +1347,16 @@ kn_play::
 	
 	
 	;; write frequency
+	bsr get_effected_pitch
+	move.w d0,d1
+	lsr.w #8,d1
 	lea fm_chn3_freq_reg_tbl,a0
 	move.b (a0,d7),d2
 	fm_reg_1 d2
-	fm_write_1 t_pitch(a5)
+	fm_write_1 d1
 	subq.b #4,d2
 	fm_reg_1 d2
-	fm_write_1 t_pitch+1(a5)
+	fm_write_1 d0
 	
 	
 	;;write key state
@@ -1589,13 +1651,16 @@ kn_play::
 	
 	
 	;; write frequency
+	bsr get_effected_pitch
+	move.w d0,d1
+	lsr.w #8,d1
 	move.l d6,d2
 	ori.b #$a4,d2
 	fm_reg d2
-	fm_write t_pitch(a5)
+	fm_write d1
 	subq.b #4,d2
 	fm_reg d2
-	fm_write t_pitch+1(a5)
+	fm_write d0
 	
 	
 	
@@ -1706,8 +1771,8 @@ kn_play::
 	
 	
 .psg_out_per
+	bsr get_effected_pitch
 	move.w #$3ff,d1
-	move.w t_pitch(a5),d0
 	cmp.w d1,d0
 	bls .psg_out_no_3ff
 	move.w d1,d0
@@ -1768,6 +1833,7 @@ kn_play::
 	
 	
 	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	movem.l (sp)+,d2-d7/a2-a6
 	rts
 	
@@ -1795,21 +1861,194 @@ get_note_pitch:
 	
 	;if the octave is negative, right shift the fnum
 	tst.b d1
-	bpl .fm_set
+	bmi .fm_neg
+	
+	lsl.l #8,d1
+	lsl.l #3,d1
+	or.w d1,d0
+	rts
+	
+.fm_neg:
 	neg.b d1
 	lsr.w d1,d0
 	rts
 	
-.fm_set
-	lsl.l #8,d1
-	lsl.l #3,d1
-	or.w d1,d0
-	
-	rts
 	
 .psg
 	lea psg_period_tbl,a1
 	move.w (a1,d0),d0
+	rts
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;
+	;; track in a5
+	;; this routine can't touch d5-d7/a5-a6
+	;; returns pitch in d0
+	;;;; NOTE: this whole routine is really slow due to all the multiplications.
+	;;;; please contact me if you know how to make it faster without wasting a bunch of ROM
+get_effected_pitch:
+	;;; get total finetune in d4
+	;;; every 256 finetune units is a semitone up
+	
+	move.b t_finetune(a5),d4
+	ext.w d4
+	ext.l d4
+	asl.l #1,d4 ;effect finetune takes 128 units to go up a semitone
+	
+	;if vibrato is on, add it to the finetune
+	tst.b t_vib(a5)
+	beq .novib
+	moveq #0,d0
+	move.b t_vib_phase(a5),d0
+	andi.b #$3f,d0
+	lsl.l #1,d0
+	lea vib_tbl,a0
+	move.w (a0,d0),d0
+	
+	;check for vibrato mode 
+	move.b t_vib_mode(a5),d2 ;mode 0, normal mode
+	beq .addvib
+	subq.b #1,d2
+	bne .vibdown
+	;mode 1, only up
+.vibup:
+	tst.w d0
+	bpl .addvib
+	bra .novib
+	
+	;mode 2, only down
+.vibdown:
+	tst.w d0
+	bpl .novib
+	
+.addvib:
+
+	;; scale vibrato based on depths
+	tst.w d0
+	beq .novib
+	moveq #0,d1
+	lea vib_scale_tbl,a0
+	move.b t_vib_fine(a5),d1
+	move.b t_vib(a5),d2
+	andi.b #$0f,d2
+	lsl.l #4,d1
+	or.b d2,d1
+	lsl.l #1,d1
+	muls.w (a0,d1),d0
+	asr.l #8,d0
+	
+	;; add vibrato amplitude to finetune
+	add.l d0,d4
+.novib:
+	
+	;;; get base pitch in d0
+	
+	;first, check if we should use the current pitch, or the arpeggio
+	tst.w t_slide(a5) ;if sliding, ALWAYS use current pitch
+	bne .curpitch
+	tst.b t_arp(a5) ;if NOT arpeggiating, use current pitch
+	beq .curpitch
+	;otherwise use arpeggio
+	moveq #0,d0
+	move.b t_note(a5),d0
+	
+	move.b t_arp_phase(a5),d2 ;do we need to add anything to the note?
+	beq .getarp
+	move.b t_arp(a5),d3 ;ok, which?
+	subq.b #1,d2
+	bne .arp2
+	lsr.b #4,d3
+.arp2:
+	andi.b #$0f,d3
+	add.b d3,d0
+	
+	;now actually get the arpeggiated note pitch
+.getarp
+	bsr get_note_pitch
+	bra .gotpitch
+	
+.curpitch:
+	move.w t_pitch(a5),d0
+	
+.gotpitch:
+	
+	;;; we have the pitch, now apply finetune
+	move.l d4,d3
+	andi.l #$ff,d4 ;finetune in d4
+	asr.l #8,d3 ;semitone difference in d3
+	
+	cmpi.b #10,t_chn(a5)
+	bhs .psg
+	
+	;;; apply finetune to fm
+.fm:
+	move.w d0,d1
+	andi.w #$f800,d1 ;octave in d1
+	andi.l #$07ff,d0 ;fnum in d0
+	
+	;; if needed, fix the semitone
+	tst.l d3
+	beq .fm_no_semi
+	lea semitune_tbl+(5*12*2),a0
+	asl.l #1,d3
+	mulu.w (a0,d3),d0
+	lsr.l #8,d0
+	lsr.l #3,d0
+.fm_no_semi
+	
+	;; do any finetuning
+	tst.l d4
+	beq .fm_no_fine
+	lea fm_finetune_tbl,a0
+	lsl.l #1,d4
+	move.w (a0,d4),d4
+	mulu.w d0,d4
+	clr.w d4 ;effectively divide by $10000
+	swap d4
+	add.l d4,d0
+.fm_no_fine
+	
+	;; if the fnum is too high fix it and the octave
+	move.l #$0800,d2
+	cmp.l d2,d0
+	blo .fm_done
+.fm_fix
+	sub.w d2,d1
+	lsr.l #1,d0
+	cmp.l d2,d0
+	bhs .fm_fix
+	
+	
+	;; done, return pitch
+.fm_done:
+	or.w d1,d0
+	rts
+	
+	
+	;;; apply finetune to psg
+.psg:
+	
+	;; if needed, fix the semitone
+	neg.l d3
+	beq .psg_no_semi
+	lea semitune_tbl+(5*12*2),a0
+	asl.l #1,d3
+	mulu.w (a0,d3),d0
+	lsr.l #8,d0
+	lsr.l #3,d0
+.psg_no_semi
+
+	;; do any finetuning
+	tst.l d4
+	beq .psg_no_fine
+	lea psg_finetune_tbl,a0
+	lsl.l #1,d4
+	mulu.w (a0,d4),d0
+	clr.w d0 ;effectively divide by $10000
+	swap d0
+.psg_no_fine
+	
 	rts
 	
 	
@@ -1840,5 +2079,3 @@ z80_blob:
 	incbin "z80-player.bin"
 z80_blob_end:
 
-
-	include "COMPILED-MODULE.asm"

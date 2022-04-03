@@ -178,13 +178,13 @@ reset:
 	
 	
 	move.l #$ffff0000,-(sp)
-	bsr kn_reset
+	jsr kn_reset
 	addq.l #4,sp
 	
 	
 	move.l #4,-(sp)
 	move.l #$ffff0000,-(sp)
-	bsr kn_init
+	jsr kn_init
 	addq.l #8,sp
 	
 	
@@ -208,7 +208,7 @@ mainloop:
 	move.w #$ffff,VDPDATA
 	
 	move.l #$ffff0000,-(sp)
-	bsr kn_play
+	jsr kn_play
 	addq.l #4,sp
 	
 	SetVDPAddr 0,CRAM_WRITE

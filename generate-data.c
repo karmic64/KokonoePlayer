@@ -47,6 +47,60 @@ int main()
 		fprintf(f,"%u%c", ov, v < 256-1 ? ',' : '\n');
 	}
 	
+	/* generate vibrato table */
+	fprintf(f,"vib_tbl: dw ");
+	for (int a = 0; a < 64; a++)
+	{
+		int s = sin(a * (2.0*M_PI / 64.0)) * 256;
+		fprintf(f,"%i%c", s, a < 64-1 ? ',' : '\n');
+	}
+	
+	/* generate fm finetune table */
+	/* finetuned fnum = fnum + (fnum * (finetune_tbl[finetune]/$10000)) */
+	/* the table encompasses a whole semitone up */
+	fprintf(f,"fm_finetune_tbl: dw ");
+	for (int ft = 0; ft < 256; ft++)
+	{
+		double ftm = pow(2.0, (ft/256.0)/12.0);
+		int fti = round((ftm - 1.0) * 65536.0);
+		fprintf(f,"%i%c", fti, ft < 256-1 ? ',' : '\n');
+	}
+	
+	/* generate psg finetune table */
+	/* basically the inverse of the fm table, since psg is period-pitch */
+	/* finetuned period = period * (finetune_tbl[finetune]/$10000) */
+	fprintf(f,"psg_finetune_tbl: dw ");
+	for (int ft = 0; ft < 256; ft++)
+	{
+		/* 65536 is out of the word range so just "pretend" there's a 0 */
+		double ftm = ft == 0 ? 0 : 1.0/pow(2.0, (ft/256.0)/12.0);
+		int fti = round(ftm * 65536.0);
+		fprintf(f,"%i%c", fti, ft < 256-1 ? ',' : '\n');
+	}
+	
+	/* generate fm semitone tune table */
+	/* we do NOT need a psg table- to get that multiplier, NEGATE the index */
+	fprintf(f,"semitune_tbl: dw ");
+	for (int n = (-5*12); n < (5*12); n++)
+	{
+		double mul = pow(2.0, n/12.0);
+		int i = round(mul * (1 << 11));
+		
+		fprintf(f,"%i%c", i, n < (5*12)-1 ? ',' : '\n');
+	}
+	
+	/* generate vibrato scaling table */
+	/* a fine depth of $f and a depth of $f keeps the vibtbl unaffected */
+	fprintf(f,"vib_scale_tbl: dw ");
+	for (int i = 0; i < 0x1000; i++)
+	{
+		int fine = i >> 4;
+		int depth = i & 0x0f;
+		double s = (fine*depth) / (15.0*15.0);
+		int o = s * 256.0;
+		
+		fprintf(f,"%i%c", o, i < 0x1000-1 ? ',' : '\n');
+	}
 	
 	fclose(f);
 }
