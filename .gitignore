@@ -6,6 +6,7 @@ generate-data
 
 
 COMPILED-MODULE.asm
+GENERATED-DATA.asm
 
 
 *.exe
