@@ -1074,6 +1074,8 @@ kn_play::
 	cmpi.b #$20,d0 ;fm operator macro?
 	blo .not_fm_op_macro
 	
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
+	
 	move.l d0,d2 ;operator index in d2
 	andi.b #3,d2
 	
@@ -1190,6 +1192,10 @@ kn_play::
 	
 	
 .not_fm_op_macro
+	cmpi.b #4,d0
+	blo .not_fm_macro
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
+.not_fm_macro
 	
 	lsl.l #2,d0 ;dispatch
 	jmp .reg_macro_jmp_tbl(pc,d0)
