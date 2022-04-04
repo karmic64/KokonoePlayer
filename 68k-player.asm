@@ -1317,13 +1317,27 @@ kn_play::
 	blo .afterslidefm
 	
 .slidefmup
+	cmpi.w #$3800,d4 ;if we are already on octave 7 don't push it up
+	bhs .slidefmupclamp
 	lsr.w #1,d3
 	addi.w #$0800,d4
 	bra .afterslidefm
 	
+.slidefmupclamp
+	cmpi.w #$0800,d3 ;don't allow going above block 7 fnum $7ff
+	blo .afterslidefm
+	move.w #$3fff,d3
+	bra .afterslide
+	
+.slidefmdownclamp
+	tst.w d3 ;can't go below block 0 fnum 0
+	bpl .afterslidefm
+	moveq #0,d3
+	bra .afterslide
+	
 .slidefmdown
 	tst.w d4 ;if we are already on octave 0 don't push it down
-	beq .afterslidefm
+	beq .slidefmdownclamp
 	lsl.w #1,d3
 	subi.w #$0800,d4
 	
@@ -2191,6 +2205,10 @@ get_note_pitch:
 	lsl.l #1,d0
 	move.w (a0,d0),d0
 	
+	;if the octave is too high, left shift the fnum
+	cmpi.b #8,d1
+	bge .fm_high
+	
 	;if the octave is negative, right shift the fnum
 	tst.b d1
 	bmi .fm_neg
@@ -2203,6 +2221,20 @@ get_note_pitch:
 .fm_neg:
 	neg.b d1
 	lsr.w d1,d0
+	rts
+	
+.fm_high:
+	subq.l #7,d1 ;shift count
+	lsl.l d1,d0
+	
+	cmpi.l #$800,d0 ;if it's too high, too bad
+	bhs .fm_too_big
+	
+	ori.w #$3800,d0
+	rts
+	
+.fm_too_big
+	move.l #$3fff,d0
 	rts
 	
 	
