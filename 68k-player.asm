@@ -192,7 +192,7 @@ EFF_VIBDEPTH so.b 1
 EFF_FINETUNE so.b 1
 EFF_LEGATO so.b 1
 EFF_SMPLBANK so.b 1
-EFF_CUT so.b 1 ;TODO: not implemented
+EFF_CUT so.b 1
 EFF_SYNC so.b 1 ;TODO: write sync access routine
 
 EFF_LFO so.b 1 ;TODO: fm output routine needs to handle this
@@ -1003,6 +1003,18 @@ kn_play::
 	
 	
 .nonewsongdata:
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; cut: if cut <= speedcnt then keyoff
+	move.b t_cut(a5),d0
+	beq .nocut
+	cmp.b t_speed_cnt(a5),d0
+	bhi .nocut
+	bset.b #T_FLG_KEYOFF,t_flags(a5)
+	clr.b t_cut(a5)
+.nocut:
 	
 	
 	
