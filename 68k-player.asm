@@ -100,16 +100,17 @@ t_vib_mode so.b 1
 
 
 ;;;
-t_macros so.b mac_size*MACRO_SLOTS
-
 t_fm so.b fm_size
 
-t_psg_vol so.b 1
+t_macros so.b mac_size*MACRO_SLOTS
+
+t_macro_vol so.b 1
+t_macro_arp so.b 1
+
 t_psg_noise so.b 1
 
 t_dac_mode so.b 1
 
-	so.b 1
 
 t_size = __SO
 	
@@ -913,9 +914,21 @@ kn_play::
 	bclr.b #T_FLG_KEYOFF,t_flags(a5) ;undo keyoff
 	bset.b #T_FLG_NOTE_RESET,t_flags(a5)
 	
+	;reset the macro volume to its default
+	move.b #$7f,d0
+	cmpi.b #6+4,t_chn(a5)
+	blo .volfm
+	move.b #$0f,d0
+.volfm
+	move.b d0,t_macro_vol(a5)
+	
+	;disable any macro-arp
+	move.b #$ff,t_macro_arp(a5)
+	
 	if MACRO_SLOTS > 0
 	
-	lea t_macros+mac_index(a5),a1 ;restart all macros
+	;restart all macros
+	lea t_macros+mac_index(a5),a1
 	move.w #MACRO_SLOTS-1,d0
 .notemacclear
 	move.w #0,(a1)+
@@ -998,6 +1011,8 @@ kn_play::
 	;; handle macros
 	if MACRO_SLOTS > 0
 	
+	move.b #$ff,t_macro_arp(a5)
+	
 	move.w #MACRO_SLOTS-1,d6
 	lea t_macros(a5),a4
 	
@@ -1012,7 +1027,7 @@ kn_play::
 	bne .do_macro
 	move.b 2(a0),d1 ;is there a loop?
 	cmpi.b #$ff,d1
-	beq .next_macro
+	beq .end_macro
 	move.b d1,d0
 .do_macro
 	addq.l #4,a0 ;get actual macro value
@@ -1022,11 +1037,208 @@ kn_play::
 	moveq #0,d0 ;get macro type
 	move.b -4(a0),d0
 	
-	;eventually do this properly, for now all we support is psg volume
-	cmpi.b #0,d0
-	bne .next_macro
-	move.b d1,t_psg_vol(a5)
+	;perform macro action
+	cmpi.b #$20,d0 ;fm operator macro?
+	blo .not_fm_op_macro
 	
+	move.l d0,d2 ;operator index in d2
+	andi.b #3,d2
+	
+	andi.b #$fc,d0 ;dispatch
+	jmp .fm_op_macro_jmp_tbl-$20(pc,d0)
+	
+.fm_op_macro_jmp_tbl:
+	;these MUST be .w, the jump routines rely on each entry being 4 bytes long
+	bra.w .macro_fm_op_tl
+	bra.w .macro_fm_op_ar
+	bra.w .macro_fm_op_d1r
+	bra.w .macro_fm_op_d2r
+	bra.w .macro_fm_op_rr
+	bra.w .macro_fm_op_d1l
+	bra.w .macro_fm_op_rs
+	bra.w .macro_fm_op_mul
+	bra.w .macro_fm_op_dt
+	bra.w .macro_fm_op_am
+	bra.w .macro_fm_op_ssg_eg
+	
+	
+	;note: all levels/rates are complemented before writing
+.macro_fm_op_tl
+	not.b d1
+	andi.b #$7f,d1
+	move.b d1,t_fm+fm_40(a5,d2)
+	bra .next_macro
+	
+.macro_fm_op_ar
+	lea t_fm+fm_50(a5,d2),a0
+	not.b d1
+	andi.b #$1f,d1
+	move.b (a0),d0
+	andi.b #$c0,d0
+	or.b d1,d0
+	move.b d0,(a0)
+	bra .next_macro
+	
+.macro_fm_op_d1r
+	lea t_fm+fm_60(a5,d2),a0
+	not.b d1
+	andi.b #$1f,d1
+	move.b (a0),d0
+	andi.b #$80,d0
+	or.b d1,d0
+	move.b d0,(a0)
+	bra .next_macro
+	
+.macro_fm_op_d2r
+	not.b d1
+	move.b d1,t_fm+fm_70(a5,d2)
+	bra .next_macro
+	
+.macro_fm_op_rr
+	lea t_fm+fm_80(a5,d2),a0
+	not.b d1
+	andi.b #$0f,d1
+	move.b (a0),d0
+	andi.b #$f0,d0
+	or.b d1,d0
+	move.b d0,(a0)
+	bra .next_macro
+	
+.macro_fm_op_d1l
+	lea t_fm+fm_80(a5,d2),a0
+	not.b d1
+	andi.b #$0f,d1
+	lsl.b #4,d1
+	move.b (a0),d0
+	andi.b #$0f,d0
+	or.b d1,d0
+	move.b d0,(a0)
+	bra .next_macro
+	
+.macro_fm_op_rs
+	lea t_fm+fm_50(a5,d2),a0
+	lsl.b #6,d1
+	move.b (a0),d0
+	andi.b #$1f,d0
+	or.b d1,d0
+	move.b d0,(a0)
+	bra .next_macro
+	
+.macro_fm_op_mul
+	lea t_fm+fm_30(a5,d2),a0
+	andi.b #$0f,d1
+	move.b (a0),d0
+	andi.b #$70,d0
+	or.b d1,d0
+	move.b d0,(a0)
+	bra .next_macro
+	
+.macro_fm_op_dt
+	lea t_fm+fm_30(a5,d2),a0
+	lsl.b #4,d1
+	move.b (a0),d0
+	andi.b #$0f,d0
+	or.b d1,d0
+	move.b d0,(a0)
+	bra .next_macro
+	
+.macro_fm_op_am
+	lea t_fm+fm_60(a5,d2),a0
+	lsl.b #7,d1
+	move.b (a0),d0
+	andi.b #$1f,d0
+	or.b d1,d0
+	move.b d0,(a0)
+	bra .next_macro
+	
+.macro_fm_op_ssg_eg
+	move.b d1,t_fm+fm_90(a5,d2)
+	bra .next_macro
+	
+	
+.not_fm_op_macro
+	
+	lsl.l #2,d0 ;dispatch
+	jmp .reg_macro_jmp_tbl(pc,d0)
+	
+.reg_macro_jmp_tbl
+	;these MUST be .w, the jump routines rely on each entry being 4 bytes long
+	bra.w .macro_vol
+	bra.w .macro_arp
+	bra.w .macro_arp_fixed
+	bra.w .macro_noise
+	
+	bra.w .macro_fm_alg
+	bra.w .macro_fm_fb
+	bra.w .macro_fm_fms
+	bra.w .macro_fm_ams
+	
+	
+.macro_vol
+	move.b d1,t_macro_vol(a5)
+	bra .next_macro
+	
+.macro_arp
+	add.b t_note(a5),d1
+	move.b d1,t_macro_arp(a5)
+	bra .next_macro
+	
+.macro_arp_fixed
+	addi.b #5*12,d1 ;fixed arp notes are relative to C-0
+	move.b d1,t_macro_arp(a5)
+	bra .next_macro
+	
+.macro_noise
+	;TODO: how does this actually work?
+	move.b d1,t_psg_noise(a5)
+	bra .next_macro
+	
+
+.macro_fm_alg
+	lea t_fm+fm_b0(a5),a0
+	andi.b #7,d1
+	move.b (a0),d0
+	andi.b #$38,d0
+	or.b d1,d0
+	move.b d0,(a0)
+	bra .next_macro
+	
+.macro_fm_fb
+	lea t_fm+fm_b0(a5),a0
+	lsl.b #3,d1
+	move.b (a0),d0
+	andi.b #7,d0
+	or.b d1,d0
+	move.b d0,(a0)
+	bra .next_macro
+	
+.macro_fm_fms
+	lea t_fm+fm_b4(a5),a0
+	andi.b #7,d1
+	move.b (a0),d0
+	andi.b #$30,d0
+	or.b d1,d0
+	move.b d0,(a0)
+	bra .next_macro
+	
+.macro_fm_ams
+	lea t_fm+fm_b4(a5),a0
+	andi.b #3,d1
+	lsl.b #4,d1
+	move.b (a0),d0
+	andi.b #7,d0
+	or.b d1,d0
+	move.b d0,(a0)
+	bra .next_macro
+	
+	
+	;macro is over!
+.end_macro:	
+	move.b (a0),d0 ;get macro type
+	;on fixed arpeggios, disable the macro arp
+	cmpi.b #2,d0
+	bne .next_macro
+	move.b #$ff,t_macro_arp(a5)
 	
 .next_macro
 	dbra d6,.macro_loop
@@ -1748,7 +1960,7 @@ kn_play::
 	moveq #0,d0
 	move.b t_vol(a5),d0
 	lsl.b #4,d0
-	or.b t_psg_vol(a5),d0
+	or.b t_macro_vol(a5),d0
 	move.b (a2,d0),d0
 	or.b d6,d0
 	ori.b #$90,d0
@@ -1947,12 +2159,22 @@ get_effected_pitch:
 	;first, check if we should use the current pitch, or the arpeggio
 	tst.w t_slide(a5) ;if sliding, ALWAYS use current pitch
 	bne .curpitch
+	cmpi.b #$ff,t_macro_arp(a5) ;if the macro is arpeggiating, use arpeggio
+	bne .pitcharp
 	tst.b t_arp(a5) ;if NOT arpeggiating, use current pitch
 	beq .curpitch
 	;otherwise use arpeggio
+.pitcharp
 	moveq #0,d0
+	;if the macro is arpeggiating, use that as the base note
+	move.b t_macro_arp(a5),d0
+	cmpi.b #$ff,d0
+	bne .usemacroarp
+	
+	;otherwise use the pattern base note
 	move.b t_note(a5),d0
 	
+.usemacroarp
 	move.b t_arp_phase(a5),d2 ;do we need to add anything to the note?
 	beq .getarp
 	move.b t_arp(a5),d3 ;ok, which?
