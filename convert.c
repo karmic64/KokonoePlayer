@@ -2068,6 +2068,19 @@ int read_module(char *filename)
 						if (out == EFF_SPEED1 || out == EFF_SPEED2)
 							p *= time_base;
 						
+						/* turn volume slide into signed 8-bit */
+						if (out == EFF_VOLSLIDE)
+						{
+							uint8_t up = p >> 4;
+							uint8_t down = p & 0x0f;
+							
+							/* in furnace down takes priority */
+							if (down)
+								p = (down ^ 0xff) + 1;
+							else
+								p = up;
+						}
+						
 						/* invalid vibrato mode values act like 0 */
 						if (out == EFF_VIBMODE && p > 2)
 							p = 0;

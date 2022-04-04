@@ -75,15 +75,14 @@ t_dur_cnt so.b 1
 t_dur_save so.b 1
 t_patt_index so.w 1
 t_patt_skip so.b 1 ;$ff = no skip
-	so.b 1
+t_note so.b 1
 
 ;;;
 t_instr so.w 1
-t_note so.b 1
 
-t_vol so.b 1
-t_pan so.b 1
+t_vol so.w 1 ;this is a word because volume slide needs a fractional part- most routines should only access the upper byte
 t_vol_slide so.b 1
+t_pan so.b 1
 
 t_pitch so.w 1
 t_slide so.w 1
@@ -919,7 +918,9 @@ kn_play::
 .noretarget
 	;init note as normal
 	move.b d0,t_note(a5)
+	move.l a0,-(sp)
 	bsr get_note_pitch
+	move.l (sp)+,a0
 	move.w d0,t_pitch(a5)
 	clr.b t_vib_phase(a5)
 	
@@ -1389,6 +1390,46 @@ kn_play::
 	
 	
 	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; volume slide
+	move.b t_vol_slide(a5),d0
+	beq .novolslide
+	
+	move.w t_vol(a5),d1
+	
+	ext.w d0
+	asl.w #6,d0
+	bpl .volslideup
+	
+.volslidedown
+	add.w d0,d1
+	bcs .volslideset
+	moveq #0,d1
+	bra .volslideset
+	
+.volslideup
+	;get max volume
+	move.w #$7fc0,d2
+	cmpi.b #6+4,t_chn(a5)
+	blo .volslidefm
+	move.w #$0fc0,d2
+.volslidefm
+	
+	add.w d0,d1
+	bcs .volslideclamp
+	cmp.w d2,d1
+	bls .volslideset
+	
+.volslideclamp
+	move.w d2,d1
+	
+.volslideset
+	move.w d1,t_vol(a5)
+.novolslide
+	
+	
+	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; tell what channel we're on
 	lea k_chn_track(a6),a0
@@ -1582,13 +1623,20 @@ kn_play::
 .fm_3_no_global:
 	
 	;always write TL, since it could be changed at any moment by t_vol
+	move.b t_vol(a5),d1
+	move.b t_macro_vol(a5),d2
+	not.b d1
+	not.b d2
+	andi.b #$7f,d1
+	andi.b #$7f,d2
+	add.b d2,d1
+	
 	move.l d6,d0
 	ori.b #$40,d0
-	moveq #0,d1
-	move.b t_vol(a5),d1
-	eori.b #$7f,d1
 	add.b t_fm+fm_40(a5,d7),d1
+	bcs .fm_3_tl
 	bpl .fm_3_no_tl
+.fm_3_tl
 	move.b #$7f,d1
 .fm_3_no_tl
 	fm_reg_1 d0
@@ -1855,7 +1903,12 @@ kn_play::
 	lea t_fm+fm_40(a5),a0
 	
 	move.b t_vol(a5),d2 ;first get the tl add value
-	eori.b #$7f,d2
+	move.b t_macro_vol(a5),d3
+	not.b d2
+	not.b d3
+	andi.b #$7f,d2
+	andi.b #$7f,d3
+	add.b d3,d2
 	
 	move.b t_fm+fm_b0(a5),d3 ;then get algorithm
 	andi.b #$07,d3
@@ -1865,6 +1918,10 @@ kn_play::
 	cmpi.b #7,d3
 	blo .fm_no_tl1
 	add.b d2,d1
+	bcs .fm_tl1
+	bpl .fm_no_tl1
+.fm_tl1
+	move.b #$7f,d1
 .fm_no_tl1
 	fm_reg d0
 	fm_write d1
@@ -1875,6 +1932,10 @@ kn_play::
 	cmpi.b #5,d3
 	blo .fm_no_tl3
 	add.b d2,d1
+	bcs .fm_tl3
+	bpl .fm_no_tl3
+.fm_tl3
+	move.b #$7f,d1
 .fm_no_tl3
 	fm_reg d0
 	fm_write d1
@@ -1885,6 +1946,10 @@ kn_play::
 	cmpi.b #4,d3
 	blo .fm_no_tl2
 	add.b d2,d1
+	bcs .fm_tl2
+	bpl .fm_no_tl2
+.fm_tl2
+	move.b #$7f,d1
 .fm_no_tl2
 	fm_reg d0
 	fm_write d1
@@ -1893,6 +1958,11 @@ kn_play::
 	;tl 4
 	move.b (a0)+,d1
 	add.b d2,d1
+	bcs .fm_tl4
+	bpl .fm_no_tl4
+.fm_tl4
+	move.b #$7f,d1
+.fm_no_tl4
 	fm_reg d0
 	fm_write d1
 	
@@ -2100,16 +2170,16 @@ get_note_pitch:
 	bhs .psg
 	
 .fm
-	lea note_octave_tbl,a1
-	lea (a1,d0),a1
+	lea note_octave_tbl,a0
+	lea (a0,d0),a0
 	moveq #0,d0
 	moveq #0,d1
-	move.b (a1)+,d1 ;octave
-	move.b (a1)+,d0 ;note
+	move.b (a0)+,d1 ;octave
+	move.b (a0)+,d0 ;note
 	
-	lea fm_fnum_tbl,a1
+	lea fm_fnum_tbl,a0
 	lsl.l #1,d0
-	move.w (a1,d0),d0
+	move.w (a0,d0),d0
 	
 	;if the octave is negative, right shift the fnum
 	tst.b d1
@@ -2127,8 +2197,8 @@ get_note_pitch:
 	
 	
 .psg
-	lea psg_period_tbl,a1
-	move.w (a1,d0),d0
+	lea psg_period_tbl,a0
+	move.w (a0,d0),d0
 	rts
 	
 	
