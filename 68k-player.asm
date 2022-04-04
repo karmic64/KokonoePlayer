@@ -12,7 +12,7 @@ AMT_TRACKS = 14
 
 AMT_CHANNELS = 14
 
-AMT_SONG_SLOTS = 4
+AMT_SONG_SLOTS = 1
 
 
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -52,14 +52,6 @@ T_FLG_FM_UPDATE = 4
 t_flags so.b 1
 t_chn so.b 1
 
-t_song so.w 1
-
-t_sample_map so.w 1
-
-t_speed1 so.b 1
-t_speed2 so.b 1
-t_speed_cnt so.b 1
-t_row so.b 1
 t_delay so.b 1
 t_legato so.b 1
 t_cut so.b 1
@@ -68,14 +60,12 @@ t_retrig so.b 1
 t_retrig_cnt so.b 1
 
 t_seq_base so.l 1
-t_order so.b 1
-t_song_size so.b 1
 
 t_dur_cnt so.b 1
 t_dur_save so.b 1
 t_patt_index so.w 1
-t_patt_skip so.b 1 ;$ff = no skip
 t_note so.b 1
+	so.b 1
 
 ;;;
 t_instr so.w 1
@@ -117,20 +107,32 @@ t_size = __SO
 	
 	
 	
-	;pattern skip buffer entry
+	;song slot
+	;anything song-global goes here, like speed and pattern breaks
 	clrso
-pskip_song so.w 1
-pskip_order	so.b 1
-	so.b 1
-pskip_size = __SO
+ss_order so.b 1
+ss_patt_break so.b 1 ;$ff - no skip
+ss_song_size so.b 1
+
+ss_row so.b 1
+ss_patt_size so.b 1
+
+ss_speed_cnt so.b 1
+ss_speed1 so.b 1
+ss_speed2 so.b 1
+
+ss_sample_map so.w 1
+
+ss_size = __SO
 	
 	
 	;all vars
 	clrso
+	
+k_song_slots so.b ss_size*AMT_SONG_SLOTS
+
 k_tracks so.b t_size*AMT_TRACKS
 
-
-k_pskips so.b pskip_size*AMT_SONG_SLOTS
 
 
 k_chn_track so.b AMT_CHANNELS
@@ -181,8 +183,8 @@ EFF_TONEPORTA so.b 1
 EFF_ARP so.b 1
 EFF_VIBRATO so.b 1
 EFF_PANNING so.b 1
-EFF_SPEED1 so.b 1 ;BUGGY: this should change the speed of ALL tracks in the song
-EFF_SPEED2 so.b 1 ;BUGGY: this should change the speed of ALL tracks in the song
+EFF_SPEED1 so.b 1
+EFF_SPEED2 so.b 1
 EFF_VOLSLIDE so.b 1
 EFF_PATTBREAK so.b 1
 EFF_RETRIG so.b 1 ;TODO: not implemented
@@ -286,12 +288,6 @@ kn_reset::
 	dbra d7,.clearram
 	
 	
-	lea k_pskips(a6),a0
-	moveq #AMT_SONG_SLOTS-1,d7
-	moveq #-1,d0
-.clrpskiploop:
-	move.l d0,(a0)+
-	dbra d7,.clrpskiploop
 	
 	
 	move.b #2,k_fm_prv_chn3_keyon(a6)
@@ -325,52 +321,78 @@ kn_init::
 	lsl.l #2,d0
 	movea.l (a0,d0),a0
 	
-	;;; get global song parameters in a2
-	movea.l a0,a2
-	moveq #0,d7
-	move.b 6(a0),d7
-	adda.l #8,a0
 	
-	movea.l a0,a1 ;channel arrangement table
-	adda.l d7,a0
+	;;; get song slot id
+	moveq #0,d0
+	move.b (a0)+,d0
 	
-	;if the amount of tracks is odd, re-align the pointer
-	move.b d7,d0
-	lsr.b #1,d0
-	bcc .noadjust
+	;;; get amount of tracks in song slot in d4
+	lea kn_song_slot_size_tbl,a1
+	moveq #0,d4
+	move.b (a1,d0),d4
+	
+	;;; get song slot pointer
+	lsl.l #1,d0
+	lea song_slot_index_tbl,a1
+	move.w (a1,d0),d1
+	lea (a6,d1.w),a4
+	
+	;;; get track pointer
+	lea kn_song_slot_track_index_tbl,a1
+	move.w (a1,d0),d1
+	lea (a6,d1.w),a5
+	
+	
+	;;; set up song slot
+	move.b (a0)+,ss_patt_size(a4)
+	move.b (a0)+,ss_speed1(a4)
+	move.b (a0)+,d0
+	move.b d0,ss_speed2(a4)
+	subq.b #1,d0
+	move.b d0,ss_speed_cnt(a4)
+	move.w (a0)+,ss_sample_map(a4)
+	moveq #0,d5 ;song size in d5
+	move.b (a0)+,d5
+	move.b d5,ss_song_size(a4)
+	clr.b ss_order(a4)
+	st ss_row(a4)
+	st ss_patt_break(a4)
+	
+	
+	;;; set up tracks
+	moveq #0,d7 ;channel count in d7
+	move.b (a0)+,d7
+	
+	movea.l a0,a1 ;channel arrangement table in a1
+	
+	adda.l d7,a0 ;track sequence pointer in a0
+	btst #0,d7 ;if the amount of channels is odd, realign the pointer
+	beq .evenchans
 	addq.l #1,a0
-.noadjust:
-
+.evenchans
 	
-	;for each track, init its data
-	subq.l #1,d7 ;adjust track counter for dbra
-	movea.l a6,a5 ;track base pointer
+	move.l d7,d6 ;adjust channel count for dbra (in d6)
+	subq.l #1,d6
+	
+	lsl.l #2,d5 ;song size -> sequence size in bytes
+
+	;; initialize any tracks that are used in the song
 	
 .track:
 	
-	movea.l a5,a4
+	movea.l a5,a3 ;clear variables
 	move.l #t_size-1,d0
 	moveq #0,d1
 .trackclear:
-	move.b d1,(a4)+
+	move.b d1,(a3)+
 	dbra d0,.trackclear
 	
 	move.b #$c0,t_flags(a5)
-	move.b (a1)+,d2
-	move.b d2,t_chn(a5)
-	move.w .arg_song_id+2(sp),t_song(a5)
-	move.w 4(a2),t_sample_map(a5)
-	move.b 0(a2),t_speed1(a5)
-	move.b 1(a2),t_speed2(a5)
-	move.b 1(a2),t_speed_cnt(a5)
-	subq.b #1,t_row(a5)
-	moveq #0,d3
-	move.b 7(a2),d3
-	move.b d3,t_song_size(a5)
+	move.b (a1)+,d0
+	move.b d0,t_chn(a5)
 	move.l a0,t_seq_base(a5)
 	addq.b #1,t_dur_cnt(a5)
 	addq.w #2,t_patt_index(a5)
-	subq.b #1,t_patt_skip(a5)
 	subq.w #1,t_instr(a5)
 	subq.b #1,t_slide_target(a5)
 	move.b #$c0,t_pan(a5)
@@ -378,19 +400,29 @@ kn_init::
 	move.b #$0f,t_vib_fine(a5)
 	
 	;depending on channel type, init volume
-	move.b #$7f,d0
-	cmpi.b #6+4,d2
+	move.b #$7f,d1
+	cmpi.b #6+4,d0
 	blo .volfm
-	move.b #$0f,d0
+	move.b #$0f,d1
 .volfm
-	move.b d0,t_vol(a5)
+	move.b d1,t_vol(a5)
 	
-	move.l d3,d0
-	lsl.l #2,d0
-	adda.l d0,a0
+	adda.l d5,a0
 	adda.l #t_size,a5
 	
-	dbra d7,.track
+	dbra d6,.track
+	
+	
+	;; turn off any unused tracks in the song slot
+	sub.l d7,d4 ;cleared tracks = song slot tracks - song tracks
+	beq .notrackdisable
+	subq.l #1,d4 ;dbra adjust
+.trackdisable
+	clr.b t_flags(a5)
+	adda.l #t_size,a5
+	dbra d4,.trackdisable
+	
+.notrackdisable
 	
 	
 	
@@ -399,16 +431,115 @@ kn_init::
 	
 	
 	
+	
+	
+	
+	
+	
+	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; play routine
 kn_play::
-	cargs #(6+5+1)*4, .arg_music_base.l, .arg_song_id.l
+	cargs #(6+5+1)*4, .arg_music_base.l
 	
 	movem.l d2-d7/a2-a6,-(sp)
 	
 	movea.l .arg_music_base(sp),a6
 	
-	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	
+	
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; handle song slots
+	moveq #AMT_SONG_SLOTS-1,d7
+	lea k_song_slots(a6),a4
+.song_slot_loop
+	move.b ss_order(a4),d5
+	move.b ss_row(a4),d4
+	move.b ss_speed_cnt(a4),d3
+	
+	
+	;is the row over?
+	moveq #0,d0
+	move.b d4,d0
+	andi.b #1,d0
+	addq.b #1,d3
+	cmp.b ss_speed1(a4,d0),d3
+	bne .song_slot_set_speed
+	moveq #0,d3
+	
+	;any pattern break?
+	move.b ss_patt_break(a4),d0
+	bmi .no_patt_break
+	st ss_patt_break(a4)
+	moveq #0,d4 ;back to row 0
+	move.b d0,d5 ;set order
+	bra .song_reset
+	
+.no_patt_break
+	;is the pattern over?
+	addq.b #1,d4
+	cmp.b ss_patt_size(a4),d4
+	bne .song_slot_set_row
+	moveq #0,d4
+	
+	;is the song over?
+	addq.b #1,d5
+	cmp.b ss_song_size(a4),d5
+	bne .song_not_over
+	moveq #0,d5
+.song_not_over
+	
+	
+	;; reset song pattern stuff
+.song_reset
+	;get first track address
+	lea kn_song_slot_track_index_tbl,a0
+	move.l d7,d6
+	lsl.l #1,d6
+	move.w (a0,d6),d6
+	lea (a6,d6.w),a5
+	
+	;step all song tracks
+	move.l d7,d6
+	lea kn_song_slot_size_tbl,a0
+	move.b (a0,d6),d6
+	subq.b #1,d6
+.song_reset_loop:
+	btst.b #T_FLG_ON,t_flags(a5)
+	beq .next_song_reset
+	
+	move.w #2,t_patt_index(a5)
+	move.b #1,t_dur_cnt(a5)
+	
+.next_song_reset:
+	adda.l #t_size,a5
+	dbra d6,.song_reset_loop
+	
+	
+	;set song locations
+.song_slot_set_order
+	move.b d5,ss_order(a4)
+.song_slot_set_row
+	move.b d4,ss_row(a4)
+.song_slot_set_speed
+	move.b d3,ss_speed_cnt(a4)
+	
+.next_song_slot
+	adda.l #ss_size,a4
+	dbra d7,.song_slot_loop
+	
+	
+	
+	
+	
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; main track loop
 	
 	lea k_chn_track(a6),a0
 	move.w #AMT_CHANNELS-1,d7
@@ -422,48 +553,40 @@ kn_play::
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	lea k_tracks(a6),a5 ;track base pointer
-	move.w #AMT_TRACKS-1,d7 ;track counter
+	moveq #0,d7 ;track counter
 .trackloop:
 	btst.b #T_FLG_ON,t_flags(a5)
 	beq .notrack
 	
+	;; get song slot pointer in a4
+	lea kn_track_song_slot_index_tbl,a0
+	move.l d7,d0
+	lsl.l #1,d0
+	move.w (a0,d0),d0
+	lea (a6,d0.w),a4
 	
 	
 	;;;;;;;;;;;;;;;;;;;;;;
 	;; check timers
 	move.b t_delay(a5),d0 ;any delay?
 	beq .nowaitdelay
-	cmp.b t_speed_cnt(a5),d0
+	cmp.b ss_speed_cnt(a4),d0
 	bne .nonewsongdata
 	clr.b t_delay(a5)
 	bra .dosongdata
 	
 .nowaitdelay
-	moveq #0,d0 ;get speed value for this row
-	move.b t_row(a5),d0
-	andi.b #1,d0
-	move.b (t_speed1,a5,d0),d0
-	cmp.b t_speed_cnt(a5),d0
+	;if the speedcnt is 0, that means it overflowed and we should get a new row
+	tst.b ss_speed_cnt(a4)
 	bne .nonewsongdata
-	move.b #0,t_speed_cnt(a5)
 	
 .newrow
 	clr.b t_retrig(a5)
 	clr.b t_cut(a5)
 	
-	;pattern skip happened?
-	move.b t_patt_skip(a5),d0
-	bmi .nopattskip
-	move.b d0,t_order(a5)
-	move.w #2,t_patt_index(a5)
-	clr.b t_row(a5)
-	st t_patt_skip(a5)
-	bra .dosongdata
-	
 	
 .nopattskip
 	;has the duration expired?
-	addq.b #1,t_row(a5)
 	subq.b #1,t_dur_cnt(a5)
 	bne .nonewsongdata
 	
@@ -472,18 +595,12 @@ kn_play::
 .dosongdata
 	movea.l t_seq_base(a5),a0
 	moveq #0,d0
-	move.b t_order(a5),d0
+	move.b ss_order(a4),d0
 	lsl.l #2,d0
 	movea.l (a0,d0),a0
-	movea.l a0,a4
+	movea.l a0,a3 ;pattern base in a3
 	move.w t_patt_index(a5),d0
 	adda.w d0,a0
-	
-	;; if this is the first byte of the pattern, reset the row counter
-	cmpi.w #2,d0
-	bne .noresetrow
-	move.b #0,t_row(a5)
-.noresetrow
 	
 	;;;;;;;;;;;;;;;;;;;;;;
 	;; read pattern data
@@ -495,13 +612,13 @@ kn_play::
 	bne .noeffdelay
 	move.b (a0)+,d0
 	moveq #0,d1 ;get current row speed
-	move.b t_row(a5),d1
+	move.b ss_row(a4),d1
 	andi.b #1,d1
-	move.b (t_speed1,a5,d1),d1
+	move.b (ss_speed1,a4,d1),d1
 	cmp.b d1,d0
 	bhs .effdelaytoobig
 	move.b d0,t_delay(a5)
-	bra .nopattend
+	bra .aftersongdata
 .effdelaytoobig
 	move.b (a0)+,d0
 .noeffdelay
@@ -774,21 +891,13 @@ kn_play::
 	move.b (a0)+,d0
 	cmpi.b #$ff,d0
 	bne .effpattnonext
-	move.b t_order(a5),d0
+	move.b ss_order(a4),d0
 	addq.b #1,d0
 .effpattnonext
-	cmp.b t_song_size(a5),d0
+	cmp.b ss_song_size(a4),d0
 	bhs .aftereffpattbreak
 	
-	lea k_pskips(a6),a1
-	bra .effpattbreakentry
-.effpattbreakloop:
-	addq.l #pskip_size,a1
-.effpattbreakentry:
-	tst.w pskip_song(a1)
-	bpl .effpattbreakloop
-	move.w t_song(a5),pskip_song(a1)
-	move.b d0,pskip_order(a1)
+	move.b d0,ss_patt_break(a4)
 	
 .aftereffpattbreak
 	move.b (a0)+,d0
@@ -805,14 +914,14 @@ kn_play::
 	;; Fxx speed 2
 	cmpi.b #EFF_SPEED2,d0
 	bne .noeffspeed2
-	move.b (a0)+,t_speed2(a5)
+	move.b (a0)+,ss_speed2(a4)
 	move.b (a0)+,d0
 .noeffspeed2
 	
 	;; 9xx speed 1
 	cmpi.b #EFF_SPEED1,d0
 	bne .noeffspeed1
-	move.b (a0)+,t_speed1(a5)
+	move.b (a0)+,ss_speed1(a4)
 	move.b (a0)+,d0
 .noeffspeed1
 	
@@ -873,7 +982,7 @@ kn_play::
 	move.b d0,d1
 	lsr.b #5,d1
 	moveq #0,d2
-	move.b 0(a4),d2
+	move.b 0(a3),d2
 	lsl.l #2,d2
 	lea kn_duration_tbl,a1
 	add.l d2,d1
@@ -902,7 +1011,7 @@ kn_play::
 	move.b (a0)+,d0
 	bra .gotnote
 .nolongnote:
-	add.b 1(a4),d0
+	add.b 1(a3),d0
 .gotnote:
 	
 	;if there will be a toneportamento, DON'T reinit the note, just init a slide
@@ -1006,26 +1115,10 @@ kn_play::
 	
 .afternote:
 	
-	;;;;;;;;;;;;;; is the pattern over?
 	
-	;end byte?
-	cmpi.b #$ff,(a0)
-	bne .nopattend
-	
-	move.b t_order(a5),d0
-	addq.b #1,d0
-	cmp.b t_song_size(a5),d0
-	bne .noresetsong
-	moveq #0,d0
-.noresetsong
-	move.b d0,t_order(a5)
-	
-.resetpattindex:
-	move.w #2,t_patt_index(a5)
-	
-	bra .nonewsongdata
-.nopattend:
-	suba.l a4,a0
+.aftersongdata:
+	;prepare for next song data read
+	suba.l a3,a0
 	move.w a0,t_patt_index(a5)
 	
 	
@@ -1037,7 +1130,7 @@ kn_play::
 	;; cut: if cut <= speedcnt then keyoff
 	move.b t_cut(a5),d0
 	beq .nocut
-	cmp.b t_speed_cnt(a5),d0
+	cmp.b ss_speed_cnt(a4),d0
 	bhi .nocut
 	bset.b #T_FLG_KEYOFF,t_flags(a5)
 	clr.b t_cut(a5)
@@ -1053,12 +1146,12 @@ kn_play::
 	move.b #$ff,t_macro_arp(a5)
 	
 	move.w #MACRO_SLOTS-1,d6
-	lea t_macros(a5),a4
+	lea t_macros(a5),a3
 	
 .macro_loop:
-	movea.l (a4)+,a0
+	movea.l (a3)+,a0
 	moveq #0,d0
-	move.w (a4)+,d0
+	move.w (a3)+,d0
 	
 	move.l a0,d1 ;pointer is null?
 	beq .next_macro
@@ -1072,7 +1165,7 @@ kn_play::
 	addq.l #4,a0 ;get actual macro value
 	move.b (a0,d0),d1
 	addq.w #1,d0 ;step index
-	move.w d0,-2(a4)
+	move.w d0,-2(a3)
 	moveq #0,d0 ;get macro type
 	move.b -4(a0),d0
 	
@@ -1454,19 +1547,18 @@ kn_play::
 	lea k_chn_track(a6),a0
 	moveq #0,d0
 	move.b t_chn(a5),d0
-	move.b #AMT_TRACKS-1,d1
-	sub.b d7,d1
-	move.b d1,(a0,d0)
+	move.b d7,(a0,d0)
 	
 	
 	
 	
 	
-	addq.b #1,t_speed_cnt(a5)
 	
 .notrack:
 	adda.l #t_size,a5
-	dbra d7,.trackloop
+	addq.b #1,d7
+	cmpi.b #AMT_TRACKS,d7
+	blo .trackloop
 	
 	
 	
@@ -1799,7 +1891,13 @@ kn_play::
 	
 	;get sample map
 	moveq #0,d1
-	move.w t_sample_map(a5),d1
+	move.b k_chn_track+5(a6),d1
+	lsl.l #1,d1
+	lea kn_track_song_slot_index_tbl,a0
+	move.w (a0,d1),d1
+	lea (a6,d1.w),a0
+	
+	move.w ss_sample_map(a0),d1
 	lsl.l #2,d1
 	lea kn_sample_map_tbl,a0
 	movea.l (a0,d1),a0
@@ -2147,35 +2245,7 @@ kn_play::
 	
 	
 	
-	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-	;; handle any pattern skips
-	lea k_pskips(a6),a0
-	moveq #AMT_SONG_SLOTS-1,d7
 	
-.patt_skip_loop
-	move.w pskip_song(a0),d0
-	bmi .patt_skip_next
-	move.b pskip_order(a0),d1
-	
-	lea k_tracks(a6),a5
-	move.w #AMT_TRACKS-1,d6
-.patt_skip_1_loop:
-	cmp.w t_song(a5),d0
-	bne .patt_skip_1_next
-	
-	;tell the pattern reader to jump to the order next row.
-	;we CAN'T do that here, otherwise delays and pattern skips
-	;on the same row will make the channel fall out of sync
-	move.b d1,t_patt_skip(a5)
-	
-.patt_skip_1_next:
-	adda.l #t_size,a5
-	dbra d6,.patt_skip_1_loop
-	
-	move.w #$ffff,pskip_song(a0)
-.patt_skip_next
-	adda.l #pskip_size,a0
-	dbra d7,.patt_skip_loop
 	
 	
 	
@@ -2435,6 +2505,27 @@ track_index_tbl:
 	rept AMT_TRACKS
 		dw t_size*REPTN + k_tracks
 	endr
+	
+song_slot_index_tbl:
+	rept AMT_SONG_SLOTS
+		dw ss_size*REPTN + k_song_slots
+	endr
+	
+	
+;;; this stuff should be generated by convert.c later on
+kn_track_song_slot_index_tbl:
+	rept AMT_TRACKS
+		dw k_song_slots
+	endr
+
+kn_song_slot_track_index_tbl:
+	rept AMT_SONG_SLOTS
+		dw k_tracks
+	endr
+	
+kn_song_slot_size_tbl:
+	db AMT_TRACKS
+	align 1
 	
 	
 	

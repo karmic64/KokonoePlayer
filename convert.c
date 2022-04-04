@@ -2496,13 +2496,14 @@ int main(int argc, char *argv[])
 	{
 		song_t *s = &song_tbl[i];
 		
-		fprintf(f,"kn_song_%u: db %u,%u,%u,0\n", i, s->speed1,s->speed2,s->pattern_size);
+		/*** TODO: make that 0 the song slot id */
+		fprintf(f,"kn_song_%u: db 0,%u,%u,%u\n", i, s->pattern_size, s->speed1,s->speed2);
 		fprintf(f,
 			" dw %u\n"
 			" db %u,%u\n"
 			" db "
 				, s->sample_map
-				, s->channels,s->orders);
+				, s->orders,s->channels);
 		for (unsigned j = 0; j < s->channels; j++)
 			fprintf(f,"%u%c", s->channel_arrangement[j], (j < (unsigned)s->channels-1)?',':'\n');
 		
@@ -2636,7 +2637,9 @@ int main(int argc, char *argv[])
 				fputc(' ',f);
 			}
 		}
-		fprintf(f,"$ff\n");
+		/* delete trailing comma */
+		fseek(f,-2,SEEK_CUR);
+		fputc('\n',f);
 	}
 	fputc('\n', f);
 	
