@@ -849,6 +849,11 @@ int read_module(char *filename)
 				memcpy(song.channel_arrangement, channel_arrangement_ext, sizeof(channel_arrangement_ext));
 				song.channels = 13;
 				break;
+			case 0x03:
+				puts("SMS module.");
+				memcpy(song.channel_arrangement, channel_arrangement_psg, sizeof(channel_arrangement_psg));
+				song.channels = 4;
+				break;
 			default:
 				printf("Invalid/unsupported system type $%02X.\n",system);
 				goto read_module_fail;
