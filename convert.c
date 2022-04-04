@@ -2014,7 +2014,10 @@ int read_module(char *filename)
 						}
 						
 						/*** process effect ***/
-						if (c == -1 || p == -1) continue;
+						if (c == -1) continue;
+						
+						/* blank effect params seem equivalent to 0 */
+						if (p == -1) p = 0;
 						
 						uint8_t *outp;
 						if (c < 0 || c > 0xff
