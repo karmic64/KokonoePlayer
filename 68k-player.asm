@@ -471,6 +471,7 @@ kn_play::
 	
 	;;;;;;;;;;;;;;;;;;;;;;
 	;; read pattern data
+	moveq #0,d0
 	move.b (a0)+,d0
 	
 	;;;;;;; delay
@@ -562,6 +563,7 @@ kn_play::
 	
 	
 .afterinstrset
+	moveq #0,d0
 	move.b (a0)+,d0
 .noinstrset
 
