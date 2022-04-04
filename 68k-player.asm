@@ -183,7 +183,7 @@ EFF_VIBRATO so.b 1
 EFF_PANNING so.b 1
 EFF_SPEED1 so.b 1 ;BUGGY: this should change the speed of ALL tracks in the song
 EFF_SPEED2 so.b 1 ;BUGGY: this should change the speed of ALL tracks in the song
-EFF_VOLSLIDE so.b 1 ;TODO: not implemented
+EFF_VOLSLIDE so.b 1
 EFF_PATTBREAK so.b 1
 EFF_RETRIG so.b 1 ;TODO: not implemented
 
@@ -196,7 +196,7 @@ EFF_SMPLBANK so.b 1
 EFF_CUT so.b 1
 EFF_SYNC so.b 1 ;TODO: write sync access routine
 
-EFF_LFO so.b 1 ;TODO: fm output routine needs to handle this
+EFF_LFO so.b 1
 EFF_FB so.b 1
 EFF_TL1 so.b 1
 EFF_TL2 so.b 1
@@ -295,6 +295,9 @@ kn_reset::
 	
 	
 	move.b #2,k_fm_prv_chn3_keyon(a6)
+	
+	;this is just a guess- i have no clue if this is the default
+	move.b #$b,k_fm_lfo(a6)
 	
 	
 	movem.l (sp)+,d2-d7/a2-a6
@@ -978,7 +981,9 @@ kn_play::
 .inittargetslide:
 	;note is in d0, speed is in d6
 	move.b d0,t_slide_target(a5)
+	move.l a0,-(sp)
 	bsr get_note_pitch
+	move.l (sp)+,a0
 	cmp.w t_pitch(a5),d0
 	bhs .targetslideadd
 	neg.w d6
@@ -1489,6 +1494,11 @@ kn_play::
 		bmi .fm_write_1_wait_\@
 		move.b \1,(a4)
 	endm
+	
+	
+	;send lfo
+	fm_reg_1 #$22
+	fm_write_1 k_fm_lfo(a6)
 	
 	
 	;;;;;;;;;;;;;;;;;; extd.chn3 out

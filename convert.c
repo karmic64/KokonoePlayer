@@ -2097,6 +2097,15 @@ int read_module(char *filename)
 							p = (l ? 0x80 : 0) | (r ? 0x40 : 0);
 						}
 						
+						/* represent LFO like fm reg $22 */
+						if (out == EFF_LFO)
+						{
+							unsigned en = p & 0xf0;
+							unsigned f = p & 7;
+							
+							p = en ? (8 | f) : f;
+						}
+						
 						/* index operator from 0 */
 						if (out == EFF_MUL)
 							p -= 0x10;
