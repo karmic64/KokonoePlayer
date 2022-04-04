@@ -74,6 +74,8 @@ t_song_size so.b 1
 t_dur_cnt so.b 1
 t_dur_save so.b 1
 t_patt_index so.w 1
+t_patt_skip so.b 1 ;$ff = no skip
+	so.b 1
 
 ;;;
 t_instr so.w 1
@@ -366,6 +368,7 @@ kn_init::
 	move.l a0,t_seq_base(a5)
 	addq.b #1,t_dur_cnt(a5)
 	addq.w #2,t_patt_index(a5)
+	subq.b #1,t_patt_skip(a5)
 	subq.w #1,t_instr(a5)
 	subq.b #1,t_slide_target(a5)
 	move.b #$c0,t_pan(a5)
@@ -442,14 +445,25 @@ kn_play::
 	bne .nonewsongdata
 	move.b #0,t_speed_cnt(a5)
 	
+.newrow
+	clr.b t_retrig(a5)
+	clr.b t_cut(a5)
+	
+	;pattern skip happened?
+	move.b t_patt_skip(a5),d0
+	bmi .nopattskip
+	move.b d0,t_order(a5)
+	move.w #2,t_patt_index(a5)
+	clr.b t_row(a5)
+	st t_patt_skip(a5)
+	bra .dosongdata
+	
+	
+.nopattskip
 	;has the duration expired?
 	addq.b #1,t_row(a5)
 	subq.b #1,t_dur_cnt(a5)
 	bne .nonewsongdata
-	
-.newrow
-	clr.b t_retrig(a5)
-	clr.b t_cut(a5)
 	
 	;;;;;;;;;;;;;;;;;;;;;;
 	;; get pattern base
@@ -987,10 +1001,11 @@ kn_play::
 .afternote:
 	
 	;;;;;;;;;;;;;; is the pattern over?
+	
+	;end byte?
 	cmpi.b #$ff,(a0)
 	bne .nopattend
 	
-	move.w #2,t_patt_index(a5)
 	move.b t_order(a5),d0
 	addq.b #1,d0
 	cmp.b t_song_size(a5),d0
@@ -998,6 +1013,10 @@ kn_play::
 	moveq #0,d0
 .noresetsong
 	move.b d0,t_order(a5)
+	
+.resetpattindex:
+	move.w #2,t_patt_index(a5)
+	
 	bra .nonewsongdata
 .nopattend:
 	suba.l a4,a0
@@ -1495,7 +1514,6 @@ kn_play::
 	move.b d0,k_fm_prv_chn3_keyon(a6)
 	fm_write_1 d0
 	
-	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
 	bra .fm_3_out_next
 	
 .fm_3_out_go:
@@ -1659,7 +1677,6 @@ kn_play::
 	move.b #$ff,z80_base+z80_start_flag
 .fm_kill_no_dac
 	
-	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
 	bra .fm_out_next
 .fm_out_go
 	
@@ -2045,9 +2062,12 @@ kn_play::
 .patt_skip_1_loop:
 	cmp.w t_song(a5),d0
 	bne .patt_skip_1_next
-	move.b d1,t_order(a5)
-	move.w #2,t_patt_index(a5)
-	move.b #1,t_dur_cnt(a5)
+	
+	;tell the pattern reader to jump to the order next row.
+	;we CAN'T do that here, otherwise delays and pattern skips
+	;on the same row will make the channel fall out of sync
+	move.b d1,t_patt_skip(a5)
+	
 .patt_skip_1_next:
 	adda.l #t_size,a5
 	dbra d6,.patt_skip_1_loop
