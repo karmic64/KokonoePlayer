@@ -799,7 +799,7 @@ kn_play::
 	andi.b #$0f,d0
 	lea t_fm+fm_30(a5,d1),a1
 	move.b (a1),d1
-	andi.b #$f0,d1
+	andi.b #$70,d1
 	or.b d0,d1
 	move.b d1,(a1)
 	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
@@ -1049,7 +1049,10 @@ kn_play::
 	cmpi.b #EFF_TONEPORTA,d5
 	beq .inittargetslide
 	
-.notoneporta:
+	;if there will be another slide initialized this row, always reinit the note
+	tst.b d5
+	bne .noretarget
+	
 	;if there is already a targeted slide, just change the target
 	cmpi.b #$ff,t_slide_target(a5)
 	beq .noretarget
