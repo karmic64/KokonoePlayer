@@ -2120,6 +2120,15 @@ int read_module(char *filename)
 						if (out >= EFF_AR1 && out <= EFF_AR)
 							p &= 0x1f;
 						
+						/* represent noise mode like in macros */
+						if (out == EFF_NOISE)
+						{
+							uint8_t f = p & 0xf0;
+							uint8_t n = p & 0x0f;
+							
+							p = (f ? 2 : 0) | (n ? 1 : 0);
+						}
+						
 						/* legato is just on-or-off */
 						if (out == EFF_LEGATO)
 							p = (p == 1);

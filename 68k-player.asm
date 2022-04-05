@@ -52,18 +52,18 @@ T_FLG_FM_UPDATE = 4
 t_flags so.b 1
 t_chn so.b 1
 
+t_seq_base so.l 1
+t_patt_index so.w 1
+
+t_dur_cnt so.b 1
+t_dur_save so.b 1
+
 t_delay so.b 1
 t_legato so.b 1
 t_cut so.b 1
 t_smpl_bank so.b 1
 t_retrig so.b 1
 t_retrig_cnt so.b 1
-
-t_seq_base so.l 1
-
-t_dur_cnt so.b 1
-t_dur_save so.b 1
-t_patt_index so.w 1
 t_note so.b 1
 	so.b 1
 
@@ -212,7 +212,7 @@ EFF_AR3 so.b 1
 EFF_AR4 so.b 1
 EFF_AR so.b 1
 
-EFF_NOISE so.b 1 ;TODO: psg output routine needs to handle this
+EFF_NOISE so.b 1
 
 MAX_EFFECT = __SO - 1
 
@@ -398,6 +398,7 @@ kn_init::
 	move.b #$c0,t_pan(a5)
 	addq.b #1,t_arp_speed(a5)
 	move.b #$0f,t_vib_fine(a5)
+	addq.b #3,t_psg_noise(a5)
 	
 	;depending on channel type, init volume
 	move.b #$7f,d1
@@ -525,6 +526,13 @@ kn_play::
 	bset.b #T_FLG_KEYOFF,t_flags(a5)
 	clr.w t_slide(a5)
 	clr.b t_vol_slide(a5)
+	
+	move.b #$7f,d0
+	cmpi.b #6+4,t_chn(a5)
+	blo .reset_vol_fm
+	move.b #$0f,d0
+.reset_vol_fm
+	move.b d0,t_vol(a5)
 	
 .next_song_reset:
 	adda.l #t_size,a5
@@ -1369,8 +1377,7 @@ kn_play::
 	bra .next_macro
 	
 .macro_noise
-	;TODO: how does this actually work?
-	 ;move.b d1,t_psg_noise(a5)
+	move.b d1,t_psg_noise(a5)
 	bra .next_macro
 	
 
@@ -2237,23 +2244,60 @@ kn_play::
 	ori.b #$90,d0
 	move.b d0,(a3)
 	
-	;;output the period
+	;;; check noise channel
 	cmpi.b #3,d7 ;if this is the noise we need to do some extra stuff
-	bne .psg_out_per
+	bne .psg_not_noise
 	
-	;temp stuff for now
-	move.b #$e7,d0
-	cmp.b k_psg_prv_noise(a6),d0
+	;;setup noise register write value
+	move.b #$e0,d1
+	move.b t_psg_noise(a5),d0
+	
+	btst #0,d0 ;white noise?
+	beq .psg_per_noise
+	ori.b #4,d1
+.psg_per_noise
+	
+	btst #1,d0 ;locked mode?
+	bne .psg_noise_ext
+	
+	;locked mode, get the noise
+	bsr get_effected_note
+	lea note_octave_tbl,a0
+	lsl.l #1,d0
+	move.b 1(a0,d0),d0
+	
+	;note too high?
+	cmpi.b #3,d0
+	blo .psg_lock_set
+	moveq #2,d0
+.psg_lock_set
+	
+	eori.b #3,d0
+	subq.b #1,d0
+	or.b d0,d1
+	
+	bra .psg_set_noise
+	
+.psg_noise_ext
+	ori.b #3,d1
+	
+.psg_set_noise
+	cmp.b k_psg_prv_noise(a6),d1
 	beq .no_psg_noise
-	move.b d0,k_psg_prv_noise(a6)
-	move.b d0,(a3)
+	move.b d1,k_psg_prv_noise(a6)
+	move.b d1,(a3)
 .no_psg_noise
 	
-	move.b #$40,d6
-	move.b #$ff,2(a4)
+	;ok, we wrote the noise register, do we need to write period?
+	not.b d1
+	andi.b #3,d1
+	bne .psg_out_next
 	
+	move.b #$40,d6 ;change channel id to tone2
+	move.b #$ff,2(a4) ;disable tone2 output
 	
-.psg_out_per
+	;;; actually output period
+.psg_not_noise
 	bsr get_effected_pitch
 	move.w #$3ff,d1
 	cmp.w d1,d0
@@ -2357,6 +2401,36 @@ get_note_pitch:
 	
 	
 	
+	;;;;;;;;;;;;;;;;;;;
+	;; track in a5
+	;; this routine can't touch d1/d4-d7/a5-a6
+	;; returns note in d0
+get_effected_note:
+	moveq #0,d0
+	;if the macro is arpeggiating, use that as the base note
+	move.b t_macro_arp(a5),d0
+	cmpi.b #$ff,d0
+	bne .usemacroarp
+	
+	;otherwise use the pattern base note
+	move.b t_note(a5),d0
+	
+.usemacroarp
+	move.b t_arp_phase(a5),d2 ;do we need to add anything to the note?
+	beq .gotarp
+	move.b t_arp(a5),d3 ;ok, which?
+	subq.b #1,d2
+	bne .arp2
+	lsr.b #4,d3
+.arp2:
+	andi.b #$0f,d3
+	add.b d3,d0
+.gotarp
+	
+	rts
+	
+	
+	
 	;;;;;;;;;;;;;;;;;;;;
 	;; track in a5
 	;; this routine can't touch d5-d7/a5-a6
@@ -2429,28 +2503,9 @@ get_effected_pitch:
 	beq .curpitch
 	;otherwise use arpeggio
 .pitcharp
-	moveq #0,d0
-	;if the macro is arpeggiating, use that as the base note
-	move.b t_macro_arp(a5),d0
-	cmpi.b #$ff,d0
-	bne .usemacroarp
-	
-	;otherwise use the pattern base note
-	move.b t_note(a5),d0
-	
-.usemacroarp
-	move.b t_arp_phase(a5),d2 ;do we need to add anything to the note?
-	beq .getarp
-	move.b t_arp(a5),d3 ;ok, which?
-	subq.b #1,d2
-	bne .arp2
-	lsr.b #4,d3
-.arp2:
-	andi.b #$0f,d3
-	add.b d3,d0
+	bsr get_effected_note
 	
 	;now actually get the arpeggiated note pitch
-.getarp
 	bsr get_note_pitch
 	bra .gotpitch
 	

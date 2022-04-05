@@ -150,6 +150,21 @@ The exception is when there is an effect modifying one of the global parameters.
 
 
 
+--- PSG Noise ---
+
+PSG noise has two parameters: whether the noise is white/periodic, and whether it is locked to the 3 standard frequencies.
+
+The effect 20xy controls the noise mode: if x is 1, the frequency is extended, if y is 1, the noise is white. The default setting is 11.
+If x is 0, the frequency is controlled by the note, valid notes are C, C#, and D. Any other note acts like D.
+The effect does nothing if a duty/noise macro is actively changing the noise mode.
+
+In duty/noise macros, bit 0 controls the noise "quality" and bit 1 controls the frequency. Valid values are 0-3.
+
+
+Pitch effects act unpredictably when the frequency is locked, and I can't be bothered to figure out the specifics.
+
+
+
 
 
 --- Other Effects ---

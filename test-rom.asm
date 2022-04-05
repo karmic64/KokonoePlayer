@@ -182,7 +182,7 @@ reset:
 	addq.l #4,sp
 	
 	
-	move.l #3,-(sp)
+	move.l #5,-(sp)
 	move.l #$ffff0000,-(sp)
 	jsr kn_init
 	addq.l #8,sp
