@@ -167,6 +167,26 @@ SetVDPRegsA macro
 	include "exceptions.asm"
 	
 	
+	pushsection
+	offset $ffff8000
+	
+rawjoy
+	db 0
+joy
+	db 0
+	
+song_num
+	db 0
+	
+	
+	align 5
+music_ram
+	ds.b KN_VAR_SIZE
+	
+	popsection
+	
+	
+	
 reset:
 	move #$2700,sr
 	
@@ -177,37 +197,125 @@ reset:
 .skiptmss
 	
 	
-	move.l #$ffff0000,-(sp)
+	pea music_ram
 	jsr kn_reset
 	addq.l #4,sp
 	
 	
-	move.l #5,-(sp)
-	move.l #$ffff0000,-(sp)
-	jsr kn_init
-	addq.l #8,sp
+	lea $a10000,a0
+	lea Z80BUSREQ,a1
+	move.w #$0100,(a1)
+	move.b #$40,d0
+	move.b d0,$9(a0)
+	move.b d0,$b(a0)
+	move.b d0,$3(a0)
+	move.b d0,$5(a0)
+	clr.w (a1)
+	
+	clr.b song_num
+	st rawjoy
 	
 	
+	bsr full_init_vdp
+	SetVDPRegA $44,1, (a0)
 	
-	;clear vdp regs
-	move.w #$8000,d0
-.vdpclear:
-	move.w d0,VDPCTRL
-	addi.w #$0100,d0
-	cmpi.w #$a000,d0
-	bne .vdpclear
 	
-	SetVDPReg 4,0
-	SetVDPReg 4,1 ;enable mode 5
 	
 mainloop:
 	cmpi.b #$10,HVCOUNTER
 	bne mainloop
 	
+	;;; display song num
+	bsr init_vdp_transfer
+	SetVDPAddrA BGABASE+(24*SCREENWIDTH*2)+(19*2), VRAM_WRITE, (a0)
+	move.b song_num,d0
+	moveq #0,d1
+	bsr output_byte
+	
+	
+	;;; read pad
+	move.w #$0100,Z80BUSREQ
+	
+	lea PORT1DATA,a0
+	
+	move.b  #$40, (a0)  ; Do 1st step
+    nop                 ; D-pad, B and C
+    nop
+    nop
+    nop
+    move.b  (a0), d0
+    
+    move.b  #$00, (a0)  ; Do 2nd step
+    nop                 ; A and Start
+    nop
+    nop
+    nop
+    move.b  (a0), d1
+	
+	clr.w Z80BUSREQ
+	
+	and.b   #$3F, d0    ; Rearrange bits
+    and.b   #$30, d1    ; into SACBRLDU
+    lsl.b   #2, d1
+    or.b    d1, d0
+	
+	not.b d0
+	move.b rawjoy,d1
+	move.b d0,rawjoy
+	not.b d1
+	and.b d1,d0
+	move.b d0,joy
+	
+	
+	;; handle song num changes
+	
+	move.b song_num,d1
+	
+	move.b d0,d2
+	andi.b #9,d2
+	beq .noup
+	cmpi.b #22,d1
+	bhs .noup
+	addq.b #1,d1
+.noup
+
+	move.b d0,d2
+	andi.b #6,d2
+	beq .nodown
+	tst.b d1
+	beq .nodown
+	subq.b #1,d1
+.nodown
+	
+	move.b d1,song_num
+	
+	
+	;; handle init/stop commands
+	btst #6,d0 ;A stops the music
+	beq .nostop
+	pea music_ram
+	jsr kn_reset
+	addq.l #4,sp
+.nostop
+	
+	btst #5,d0 ;C inits music
+	beq .noinit
+	moveq #0,d0
+	move.b song_num,d0
+	move.l d0,-(sp)
+	pea music_ram
+	jsr kn_init
+	addq.l #8,sp
+.noinit
+	
+	
+	
+	
+	;;; play music
 	SetVDPAddr 0,CRAM_WRITE
 	move.w #$ffff,VDPDATA
 	
-	move.l #$ffff0000,-(sp)
+	pea music_ram
 	jsr kn_play
 	addq.l #4,sp
 	
