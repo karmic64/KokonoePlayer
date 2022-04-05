@@ -16,4 +16,5 @@ GENERATED-DATA.asm
 *.gen
 
 
+IGNOREFOLDER
 .fuse_hidden*

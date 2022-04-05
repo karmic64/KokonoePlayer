@@ -1551,7 +1551,8 @@ int read_module(char *filename)
 				fm.reg60[op] = ((am&1)<<7) | (d1r&0x1f);
 				fm.reg70[op] = d2r&0x1f;
 				fm.reg80[op] = ((d1l&0x0f)<<4) | (rr&0x0f);
-				fm.reg90[op] = ((ssg_eg&0x10)>>1) | (ssg_eg&7);
+				/* furnace stores this like the register, unlike deflemask */
+				fm.reg90[op] = ssg_eg&0x0f;
 			}
 			
 			
