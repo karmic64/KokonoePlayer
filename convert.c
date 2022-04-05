@@ -385,6 +385,20 @@ typedef struct {
 } fm_patch_t;
 
 
+/*
+	Furnace DT map:
+	Editor | Instr | Reg
+	  -3   |   0   |  7
+	  -2   |   1   |  6
+	  -1   |   2   |  5
+	   0   |   3   |  0
+	   1   |   4   |  1
+	   2   |   5   |  2
+	   3   |   6   |  3
+	   4   |   7   |  4
+*/
+const uint8_t fm_dt_map[] = {7,6,5,0,1,2,3,4};
+
 
 
 /********* instrument **********/
@@ -1058,7 +1072,7 @@ int read_module(char *filename)
 						unsigned d2r = fr_read8u(&fr);
 						unsigned ssg_eg = fr_read8u(&fr);
 						
-						fm.reg30[op] = ((dt&7)<<4) | (mul&0x0f);
+						fm.reg30[op] = (fm_dt_map[dt&7]<<4) | (mul&0x0f);
 						fm.reg40[op] = tl&0x7f;
 						fm.reg50[op] = ((rs&3)<<6) | (ar&0x1f);
 						fm.reg60[op] = ((am&1)<<7) | (d1r&0x1f);
@@ -1545,7 +1559,7 @@ int read_module(char *filename)
 				unsigned ssg_eg = fr_read8u(&fr);
 				fr_skip(&fr,8+12);
 				
-				fm.reg30[op] = ((dt&7)<<4) | (mul&0x0f);
+				fm.reg30[op] = (fm_dt_map[dt&7]<<4) | (mul&0x0f);
 				fm.reg40[op] = tl&0x7f;
 				fm.reg50[op] = ((rs&3)<<6) | (ar&0x1f);
 				fm.reg60[op] = ((am&1)<<7) | (d1r&0x1f);

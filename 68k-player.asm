@@ -1326,12 +1326,15 @@ kn_play::
 	
 .macro_fm_op_dt
 	lea t_fm+fm_30(a5,d2),a0
-	lsl.b #4,d1
+	andi.w #7,d1
+	move.b .fm_dt_map(pc,d1.w),d1
 	move.b (a0),d0
 	andi.b #$0f,d0
 	or.b d1,d0
 	move.b d0,(a0)
 	bra .next_macro
+.fm_dt_map
+	db 7<<4, 6<<4, 5<<4, 0<<4, 1<<4, 2<<4, 3<<4, 4<<4
 	
 .macro_fm_op_am
 	lea t_fm+fm_60(a5,d2),a0
