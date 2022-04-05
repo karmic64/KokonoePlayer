@@ -172,3 +172,13 @@ EFxx is NOT a "fine tune", it works in semitones.
 
 
 
+
+
+--- Loop behavior ---
+
+
+When the song loops, all channels are cut (NOT just keyed-off, CUT), and all song state (INCLUDING EFFECTS) is reset to what it was at the start of the loop order.
+A "loop" is ANY jump to an order less than or equal to the current order, whether it be because of an effect or the end of the song.
+
+
+

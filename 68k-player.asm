@@ -387,7 +387,7 @@ kn_init::
 	move.b d1,(a3)+
 	dbra d0,.trackclear
 	
-	move.b #$c0,t_flags(a5)
+	move.b #(1 << T_FLG_ON) | (1 << T_FLG_KEYOFF),t_flags(a5)
 	move.b (a1)+,d0
 	move.b d0,t_chn(a5)
 	move.l a0,t_seq_base(a5)
@@ -471,6 +471,8 @@ kn_play::
 	moveq #0,d3
 	
 	;any pattern break?
+	move.b d5,d2 ;save the old order
+	
 	move.b ss_patt_break(a4),d0
 	bmi .no_patt_break
 	st ss_patt_break(a4)
@@ -513,6 +515,16 @@ kn_play::
 	
 	move.w #2,t_patt_index(a5)
 	move.b #1,t_dur_cnt(a5)
+	
+	cmp.b d5,d2 ;if current order < new order, DON'T reset song state
+	blo .next_song_reset
+	
+	;this is kind of a lame solution, but actually saving all the song state
+	;would waste a lot of RAM.
+	;this is enough for at least decent compatibility
+	bset.b #T_FLG_KEYOFF,t_flags(a5)
+	clr.w t_slide(a5)
+	clr.b t_vol_slide(a5)
 	
 .next_song_reset:
 	adda.l #t_size,a5
