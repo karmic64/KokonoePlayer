@@ -292,8 +292,8 @@ kn_reset::
 	
 	move.b #2,k_fm_prv_chn3_keyon(a6)
 	
-	;this is just a guess- i have no clue if this is the default
-	move.b #$b,k_fm_lfo(a6)
+	;default value obtained by poking in a vgm log
+	move.b #8,k_fm_lfo(a6)
 	
 	
 	movem.l (sp)+,d2-d7/a2-a6
