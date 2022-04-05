@@ -187,7 +187,7 @@ EFF_SPEED1 so.b 1
 EFF_SPEED2 so.b 1
 EFF_VOLSLIDE so.b 1
 EFF_PATTBREAK so.b 1
-EFF_RETRIG so.b 1 ;TODO: not implemented
+EFF_RETRIG so.b 1
 
 EFF_ARPTICK so.b 1
 EFF_VIBMODE so.b 1
@@ -881,6 +881,7 @@ kn_play::
 	cmpi.b #EFF_RETRIG,d0
 	bne .noeffretrig
 	move.b (a0)+,t_retrig(a5)
+	clr.b t_retrig_cnt(a5)
 	move.b (a0)+,d0
 .noeffretrig
 	
@@ -1043,29 +1044,6 @@ kn_play::
 	bclr.b #T_FLG_KEYOFF,t_flags(a5) ;undo keyoff
 	bset.b #T_FLG_NOTE_RESET,t_flags(a5)
 	
-	;reset the macro volume to its default
-	move.b #$7f,d0
-	cmpi.b #6+4,t_chn(a5)
-	blo .volfm
-	move.b #$0f,d0
-.volfm
-	move.b d0,t_macro_vol(a5)
-	
-	;disable any macro-arp
-	move.b #$ff,t_macro_arp(a5)
-	
-	if MACRO_SLOTS > 0
-	
-	;restart all macros
-	lea t_macros+mac_index(a5),a1
-	move.w #MACRO_SLOTS-1,d0
-.notemacclear
-	move.w #0,(a1)+
-	addq.l #4,a1
-	dbra d0,.notemacclear
-	
-	endif
-	
 	
 .blanknote:
 	
@@ -1136,6 +1114,58 @@ kn_play::
 	clr.b t_cut(a5)
 .nocut:
 	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; retrig
+	move.b t_retrig(a5),d0
+	beq .noretrig
+	
+	move.b t_retrig_cnt(a5),d1
+	cmp.b d0,d1
+	bne .stepretrig
+	
+	move.b #1,t_retrig_cnt(a5)
+	bset.b #T_FLG_NOTE_RESET,t_flags(a5)
+	
+	bra .notereset
+	
+.stepretrig
+	addq.b #1,t_retrig_cnt(a5)
+.noretrig
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; handle note resets
+	btst.b #T_FLG_NOTE_RESET,t_flags(a5)
+	beq .nonotereset
+	
+.notereset
+	;reset the macro volume to its default
+	move.b #$7f,d0
+	cmpi.b #6+4,t_chn(a5)
+	blo .volfm
+	move.b #$0f,d0
+.volfm
+	move.b d0,t_macro_vol(a5)
+	
+	;disable any macro-arp
+	move.b #$ff,t_macro_arp(a5)
+	
+	if MACRO_SLOTS > 0
+	
+	;restart all macros
+	lea t_macros+mac_index(a5),a1
+	move.w #MACRO_SLOTS-1,d0
+.notemacclear
+	move.w #0,(a1)+
+	addq.l #4,a1
+	dbra d0,.notemacclear
+	
+	endif
+	
+.nonotereset:
 	
 	
 	
@@ -1328,7 +1358,7 @@ kn_play::
 	
 .macro_noise
 	;TODO: how does this actually work?
-	move.b d1,t_psg_noise(a5)
+	 ;move.b d1,t_psg_noise(a5)
 	bra .next_macro
 	
 
