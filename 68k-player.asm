@@ -387,18 +387,28 @@ kn_init::
 	move.b d1,(a3)+
 	dbra d0,.trackclear
 	
-	move.b #(1 << T_FLG_ON) | (1 << T_FLG_KEYOFF),t_flags(a5)
+	;init pattern player
+	move.b #(1 << T_FLG_ON) | (1 << T_FLG_KEYOFF) | (1 << T_FLG_FM_UPDATE),t_flags(a5)
 	move.b (a1)+,d0
 	move.b d0,t_chn(a5)
 	move.l a0,t_seq_base(a5)
 	addq.b #1,t_dur_cnt(a5)
 	addq.w #2,t_patt_index(a5)
+	
+	;init instrument/effects
 	subq.w #1,t_instr(a5)
 	subq.b #1,t_slide_target(a5)
 	move.b #$c0,t_pan(a5)
 	addq.b #1,t_arp_speed(a5)
 	move.b #$0f,t_vib_fine(a5)
+	
 	addq.b #3,t_psg_noise(a5)
+	
+	;initialize fm patch to TL $7f/RR $f/ D1L $f
+	;this is to avoid any init noise
+	moveq #-1,d1
+	move.l d1,t_fm+fm_40(a5)
+	move.l d1,t_fm+fm_80(a5)
 	
 	;depending on channel type, init volume
 	move.b #$7f,d1
