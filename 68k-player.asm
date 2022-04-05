@@ -1256,8 +1256,6 @@ kn_play::
 	bra.w .macro_fm_op_ssg_eg
 	
 	
-	;note: all levels are complemented before writing
-	;rates are unchanged
 .macro_fm_op_tl
 	not.b d1
 	andi.b #$7f,d1
@@ -1297,7 +1295,6 @@ kn_play::
 	
 .macro_fm_op_d1l
 	lea t_fm+fm_80(a5,d2),a0
-	not.b d1
 	andi.b #$0f,d1
 	lsl.b #4,d1
 	move.b (a0),d0
