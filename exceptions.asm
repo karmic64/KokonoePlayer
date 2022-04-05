@@ -48,7 +48,7 @@ clear_vram:
     
     
     SetVDPAddrA 0,VRAM_WRITE,(a0)
-    move.w #($1000/4)-1,d7
+    move.w #($10000/4)-1,d7
 .vram:
     move.l d0,(a1)
     dbra d7,.vram

@@ -53,5 +53,5 @@ z80-player.bin: z80-player.asm z80-player.ln
 
 
 
-test-rom.gen: test-rom.asm $(68K_PLAYER_DEPS)
+test-rom.gen: test-rom.asm exceptions.asm font.rom $(68K_PLAYER_DEPS)
 	vasmm68k_mot -Fbin $(VASM_FLAGS) -o test-rom.gen test-rom.asm
