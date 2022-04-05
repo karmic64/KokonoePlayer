@@ -2112,7 +2112,11 @@ int read_module(char *filename)
 						{
 							unsigned l = p & 0xf0;
 							unsigned r = p & 0x0f;
-							p = (l ? 0x80 : 0) | (r ? 0x40 : 0);
+							if (!l && !r)
+								/* 800 acts like 811 */
+								p = 0xc0;
+							else
+								p = (l ? 0x80 : 0) | (r ? 0x40 : 0);
 						}
 						
 						/* represent LFO like fm reg $22 */
