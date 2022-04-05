@@ -1592,7 +1592,10 @@ int read_module(char *filename)
 				else if (i < 8+4)
 					ins_macro_tbl[i].type = fm_macro_type_tbl[i-8];
 				else
-					ins_macro_tbl[i].type = fm_op_macro_type_tbl[(i-8-4) % 12] + ((i-8-4) / 12);
+				{
+					unsigned op = ((i-8-4) / 12);
+					ins_macro_tbl[i].type = fm_op_macro_type_tbl[(i-8-4) % 12] + op;
+				}
 				ins_macro_tbl[i].length = 0;
 				ins_macro_tbl[i].loop = -1;
 				ins_macro_tbl[i].release = -1;
@@ -1719,7 +1722,7 @@ int read_module(char *filename)
 							uint8_t macro_data[MAX_MACRO_LEN];
 							for (unsigned j = 0; j < l; j++)
 							{
-								macro_data[j] = fr_read32s(&fr);
+								macro_data[j] = fr_read8u(&fr);
 							}
 							fm_op_macro_tbl[(op*12) + i].data_index = add_data(macro_data,l);
 						}

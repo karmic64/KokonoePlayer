@@ -301,7 +301,7 @@ kn_reset::
 	
 	
 	
-	db "KokonoePlayer v0.01 coded by Karmic"
+	db "KokonoePlayer-68k v0.50 coded by karmic"
 	align 1
 	
 	
