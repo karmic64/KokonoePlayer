@@ -2128,6 +2128,24 @@ int read_module(char *filename)
 							p = en ? (8 | f) : f;
 						}
 						
+						/* change TL/AR effects from op -> reg order */
+						switch (out)
+						{
+							case EFF_TL2:
+								out = EFF_TL3;
+								break;
+							case EFF_TL3:
+								out = EFF_TL2;
+								break;
+								
+							case EFF_AR2:
+								out = EFF_AR3;
+								break;
+							case EFF_AR3:
+								out = EFF_AR2;
+								break;
+						}
+						
 						/* index operator from 0 */
 						if (out == EFF_MUL)
 						{

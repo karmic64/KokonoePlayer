@@ -197,3 +197,19 @@ A "loop" is ANY jump to an order less than or equal to the current order, whethe
 
 
 
+
+--- Operator order ---
+
+For some reason, the designers of the YM2612 thought to mess around with the order of operators. In this document, "operator order" is the order of the operators in register $28 (keyoff), and "register order" is the order they are set in the per-operator YM registers.
+To convert between orders, simply swap operator 2 and 3.
+
+
+Within the editors, everything is in operator order. But in files, some things are saved in register order:
+- FM patches are saved in register order.
+- Furnace operator macros are saved in register order.
+- FM operator effects use _operator_ order, and are NOT modified when saving.
+- In Extd.CHN3 mode, the four CHN3 "channels" are always in operator order.
+
+
+
+
