@@ -2130,7 +2130,13 @@ int read_module(char *filename)
 						
 						/* index operator from 0 */
 						if (out == EFF_MUL)
+						{
 							p -= 0x10;
+							/* additionally change from op order -> reg order */
+							uint8_t op = p & 0xf0;
+							if (op == 0x10) p = (p & 0x0f) | 0x20;
+							else if (op == 0x20) p = (p & 0x0f) | 0x10;
+						}
 						
 						/* force fm parameters in range */
 						if (out == EFF_FB)
