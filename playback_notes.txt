@@ -213,3 +213,15 @@ Within the editors, everything is in operator order. But in files, some things a
 
 
 
+--- Samples ---
+
+DefleMask allows samples with the 17xx DAC mode effect, with a per-song sample map.
+Furnace has special "sample" instruments, which have a single sample that can be played at a per-note pitch.
+
+If both DAC mode and a sample instrument are active, the sample instrument takes priority.
+
+It appears that Furnace plans to add sample-map instruments, which the converter has some provisions for, but it's not implemented in Furnace yet (as of dev78), so it's not really feasible to implement in the player.
+
+
+
+

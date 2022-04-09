@@ -102,6 +102,11 @@ t_psg_noise so.b 1
 
 t_dac_mode so.b 1
 
+	;0: no sample
+	;$02xxxxxx: sample map, xxxxxx is the pointer (TODO: NOT IMPLEMENTED)
+	;$03xxxxxx: pitchable single sample, xxxxxx is the pointer
+t_instr_sample so.l 1
+
 
 t_size = __SO
 	
@@ -121,7 +126,7 @@ ss_speed_cnt so.b 1
 ss_speed1 so.b 1
 ss_speed2 so.b 1
 
-ss_sample_map so.w 1
+ss_sample_map so.l 1
 
 ss_size = __SO
 	
@@ -227,6 +232,8 @@ MAX_EFFECT = __SO - 1
 	;;	Any return value is returned in d0.
 	
 	
+	db "KokonoePlayer-68k v0.50 coded by karmic"
+	align 1
 	
 	
 	
@@ -301,8 +308,6 @@ kn_reset::
 	
 	
 	
-	db "KokonoePlayer-68k v0.50 coded by karmic"
-	align 1
 	
 	
 	
@@ -345,15 +350,22 @@ kn_init::
 	
 	;;; set up song slot
 	move.b (a0)+,ss_patt_size(a4)
+	
 	move.b (a0)+,ss_speed1(a4)
 	move.b (a0)+,d0
 	move.b d0,ss_speed2(a4)
 	subq.b #1,d0
 	move.b d0,ss_speed_cnt(a4)
-	move.w (a0)+,ss_sample_map(a4)
+	
+	move.w (a0)+,d0
+	lsl.w #2,d0
+	lea kn_sample_map_tbl,a1
+	move.l (a1,d0.w),ss_sample_map(a4)
+	
 	moveq #0,d5 ;song size in d5
 	move.b (a0)+,d5
 	move.b d5,ss_song_size(a4)
+	
 	clr.b ss_order(a4)
 	st ss_row(a4)
 	st ss_patt_break(a4)
@@ -1955,11 +1967,7 @@ kn_play::
 	lea kn_track_song_slot_index_tbl,a0
 	move.w (a0,d1),d1
 	lea (a6,d1.w),a0
-	
-	move.w ss_sample_map(a0),d1
-	lsl.l #2,d1
-	lea kn_sample_map_tbl,a0
-	movea.l (a0,d1),a0
+	movea.l ss_sample_map(a0),a0
 	
 	;get sample id
 	lsl.l #1,d0
