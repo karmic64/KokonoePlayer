@@ -713,6 +713,31 @@ kn_play::
 	
 	
 	;;read any extra data
+	cmpi.b #2,d4
+	blo .notsampleinstr
+	bne .melosampleinstr
+	
+	;TODO: mapped sample instrument
+	
+	bra .setsampleinstr
+	
+	;melodic sample instrument
+.melosampleinstr
+	moveq #0,d0
+	move.w (a1)+,d0
+	lsl.l #2,d0
+	lea kn_sample_tbl,a1
+	move.l (a1,d0),d0
+	ori.l #$03000000,d0
+	
+.setsampleinstr
+	move.l d0,t_instr_sample(a5)
+	bra .afterinstrset
+	
+	
+.notsampleinstr
+	clr.l t_instr_sample(a5)
+	
 	cmpi.b #1,d4 ;fm instrument
 	bne .notfminstr
 	
@@ -1932,6 +1957,9 @@ kn_play::
 	cmpi.b #5,d7
 	bne .fm_out_no_dac
 	
+	move.l t_instr_sample(a5),d0
+	bne .fm_out_instr_dac
+	
 	tst.b t_dac_mode(a5)
 	beq .fm_out_disable_dac
 	
@@ -2027,6 +2055,83 @@ kn_play::
 	
 	
 	bra .fm_out_next
+	
+	
+.fm_out_instr_dac
+	;; do instrument melodic sample
+	
+	;write panning
+	fm_reg #$b6
+	fm_write t_pan(a5)
+	
+	movea.l d0,a0
+	move.l (a0)+,d2 ;loop
+	addq.l #2,a0 ;skip rate
+	move.w (a0)+,d3 ;center rate
+	
+	move.b #2,z80_start_flag(a0)
+	btst.b #T_FLG_NOTE_RESET,t_flags(a5) ;if there is a new note, init the sample
+	beq .fm_out_instr_dac_change_rate
+	
+	move.l a0,d0 ;sample base
+	tst.l d2
+	bmi .fm_instr_dac_no_add_loop
+	add.l d0,d2
+.fm_instr_dac_no_add_loop:
+	
+	lea z80_base,a0
+	move.b #1,z80_start_flag(a0)
+	
+	;set start pointer on z80 side
+	lea z80_start_lo(a0),a0
+	move.b d0,(a0)+
+	lsr.l #8,d0
+	move.b d0,d4
+	ori.b #$80,d4
+	move.b d4,(a0)+
+	lsr.l #7,d0
+	move.b d0,(a0)+
+	
+	;set loop pointer on z80 side
+	tst.l d2
+	bmi .fm_instr_dac_no_loop
+	move.b d2,(a0)+
+	lsr.l #8,d2
+	move.b d2,d4
+	ori.b #$80,d4
+	move.b d4,(a0)+
+	lsr.l #7,d2
+	move.b d2,(a0)+
+	bra .fm_instr_dac_after_loop
+	
+.fm_instr_dac_no_loop
+	clr.b (a0)+
+	clr.b (a0)+
+	clr.b (a0)+
+.fm_instr_dac_after_loop:
+	
+	
+	
+	; get rate
+.fm_out_instr_dac_change_rate
+	move.w d3,-(sp)
+	bsr get_effected_note
+	move.w (sp)+,d3
+	
+	lea semitune_tbl-(12*4*2),a0
+	lsl.l #1,d0
+	move.w (a0,d0),d0
+	mulu.w d3,d0
+	lsr.l #8,d0
+	lsr.l #3,d0
+	
+	lea z80_rate_lo+z80_base,a0
+	move.b d0,(a0)+
+	lsr.l #8,d0
+	move.b d0,(a0)
+	
+	bra .fm_out_next
+	
 	
 .fm_out_disable_dac:
 	move.b #$ff,z80_base+z80_start_flag

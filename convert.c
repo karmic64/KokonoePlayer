@@ -1802,6 +1802,11 @@ int read_module(char *filename)
 						goto read_module_fail;
 					}
 					ins.extra_id = song_sample_map[sample_id];
+					if (ins.extra_id == (unsigned)-1)
+					{
+						printf("Sample ID %u does not exist in the module. Ignoring.\n", sample_id);
+						continue;
+					}
 					break;
 			}
 			

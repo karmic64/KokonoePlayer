@@ -114,6 +114,9 @@ do_command:
 	rlca
 	jr c,kill_sample ;$80+, kill sample and disable dac mode
 	
+	cp 2*2 ;command 2, just reset the rate
+	jr z,@change_rate
+	
 	;otherwise start the sample
 	ld a,$2b ;enable dac
 	ld b,$80
@@ -129,10 +132,11 @@ do_command:
 	
 	ld hl,(start_lo) ;address in hl
 	
+@change_rate:
 	ld c,0 ;rate accumulator in c
 	ld a,(rate_hi) ;rate hi-byte in de
 	ld e,a
-	ld d,0
+	ld d,c
 	
 	
 	
