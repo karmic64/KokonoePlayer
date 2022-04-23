@@ -117,9 +117,9 @@ t_size = __SO
 	
 SS_FLG_ON = 7
 SS_FLG_LINEAR_PITCH = 6 ;TODO: not implemented
-SS_FLG_CONT_VIB = 5 ;TODO: not implemented
-SS_FLG_PT_SLIDE = 1 ;TODO: not implemented
-SS_FLG_PT_ARP = 0 ;TODO: not implemented
+SS_FLG_CONT_VIB = 5
+SS_FLG_PT_SLIDE = 1
+SS_FLG_PT_ARP = 0
 
 	
 	
@@ -1127,7 +1127,11 @@ kn_play::
 	bsr get_note_pitch
 	move.l (sp)+,a0
 	move.w d0,t_pitch(a5)
+	
+	btst.b #SS_FLG_CONT_VIB,ss_flags(a4)
+	bne .noclrvib
 	clr.b t_vib_phase(a5)
+.noclrvib
 	
 	;if legato is on, just change the pitch
 	tst.b t_legato(a5)
