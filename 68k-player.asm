@@ -1600,6 +1600,15 @@ kn_play::
 	tst.b t_arp(a5)
 	beq .noarp
 	
+	btst.b #SS_FLG_PT_ARP,ss_flags(a4)
+	beq .normalarp
+	tst.b ss_speed_cnt(a4)
+	bne .normalarp
+	moveq #0,d0
+	moveq #0,d1
+	bra .setarp
+	
+.normalarp
 	move.b t_arp_cnt(a5),d0
 	move.b t_arp_phase(a5),d1
 	
