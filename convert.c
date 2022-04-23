@@ -221,6 +221,8 @@ const uint8_t channel_arrangement_psg[] = {
 
 
 typedef struct {
+	uint8_t flags;
+	
 	uint8_t orders;
 	uint8_t channels;
 	
@@ -844,6 +846,8 @@ int read_module(char *filename)
 		fr_skip(&fr,0x10);
 		
 		/******** deflemask reader **********/
+		song.flags = 0xc0;
+		
 		unsigned version = fr_read8u(&fr);
 		printf("DefleMask module, version %u.\n", version);
 		if (version != 0x18)
@@ -1228,10 +1232,12 @@ int read_module(char *filename)
 		fr_skip(&fr,0x10);
 		
 		/******** furnace reader ***********/
+		song.flags = 0x80;
+		
 		unsigned version = fr_read16u(&fr);
 		printf("Furnace module, version %i.\n", version);
-		if (version > 65)
-			puts("WARNING: Version is >65 - this module may be unsupported!");
+		if (version > 83)
+			puts("WARNING: Version is >83 - this module may be unsupported!");
 		
 		fr_skip(&fr,2);
 		unsigned info_offs = fr_read32u(&fr);
@@ -1369,7 +1375,17 @@ int read_module(char *filename)
 		song_name = fr_read_str(&fr);
 		song_author = fr_read_str(&fr);
 		
-		fr_skip(&fr, 20+4);
+		fr_skip(&fr, 4);
+		
+		/** compat flags **/
+		uint8_t *flags = fr_ptr(&fr);
+		
+		/* linear pitch */
+		if (version < 36 || flags[1]) song.flags |= 0x40;
+		/* continuous vibrato */
+		if (version >= 62 && flags[15]) song.flags |= 0x20;
+		
+		fr_skip(&fr, 20);
 		
 		/**** get data pointer offsets ****/
 		void *instrument_list = fr_ptr(&fr);
@@ -1402,7 +1418,22 @@ int read_module(char *filename)
 			}
 		}
 		
-		/* ok, we can ignore the rest of the header. */
+		/*** extra compat flags ***/
+		if (version >= 70)
+		{
+			fr_skip(&fr,3*song.channels);
+			for (int i = 0; i < song.channels*2 + 1; i++)
+				fr_read_str(&fr);
+			fr_skip(&fr,4);
+			
+			uint8_t *extflags = fr_ptr(&fr);
+			
+			if (version >= 71 && extflags[1]) song.flags |= 2;
+			if (version >= 71 && extflags[2]) song.flags |= 1;
+		}
+		
+		
+		
 		
 		
 		/************** read samples *******************/
@@ -2557,7 +2588,7 @@ int main(int argc, char *argv[])
 		song_t *s = &song_tbl[i];
 		
 		/*** TODO: make that 0 the song slot id */
-		fprintf(f,"kn_song_%u: db 0,%u,%u,%u\n", i, s->pattern_size, s->speed1,s->speed2);
+		fprintf(f,"kn_song_%u: db 0,$%02X,%u,%u,%u,0\n", i, s->flags, s->pattern_size, s->speed1,s->speed2);
 		fprintf(f,
 			" dw %u\n"
 			" db %u,%u\n"

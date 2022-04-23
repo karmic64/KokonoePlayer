@@ -361,6 +361,9 @@ kn_init::
 	
 	
 	;;; set up song slot
+	move.b (a0)+,ss_flags(a4)
+	st ss_volume(a4)
+	
 	move.b (a0)+,ss_patt_size(a4)
 	
 	move.b (a0)+,ss_speed1(a4)
@@ -368,6 +371,7 @@ kn_init::
 	move.b d0,ss_speed2(a4)
 	subq.b #1,d0
 	move.b d0,ss_speed_cnt(a4)
+	addq.l #1,a0
 	
 	move.w (a0)+,d0
 	lsl.w #2,d0
