@@ -1507,6 +1507,13 @@ kn_play::
 	;; slides
 	move.w t_slide(a5),d2
 	beq .noslide
+	
+	btst.b #SS_FLG_PT_SLIDE,ss_flags(a4)
+	beq .doslide
+	tst.b ss_speed_cnt(a4)
+	beq .noslide
+	
+.doslide
 	move.w t_pitch(a5),d3
 	
 	cmpi.b #10,t_chn(a5)
