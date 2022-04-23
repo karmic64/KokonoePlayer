@@ -114,7 +114,19 @@ t_size = __SO
 	
 	;song slot
 	;anything song-global goes here, like speed and pattern breaks
+	
+SS_FLG_ON = 7 ;TODO: not implemented
+SS_FLG_LINEAR_PITCH = 6 ;TODO: not implemented
+SS_FLG_CONT_VIB = 5 ;TODO: not implemented
+SS_FLG_PT_SLIDE = 1 ;TODO: not implemented
+SS_FLG_PT_ARP = 0 ;TODO: not implemented
+
+	
+	
 	clrso
+ss_flags so.b 1
+ss_volume so.b 1 ;TODO: not implemented
+	
 ss_order so.b 1
 ss_patt_break so.b 1 ;$ff - no skip
 ss_song_size so.b 1
