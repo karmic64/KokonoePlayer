@@ -115,7 +115,7 @@ t_size = __SO
 	;song slot
 	;anything song-global goes here, like speed and pattern breaks
 	
-SS_FLG_ON = 7 ;TODO: not implemented
+SS_FLG_ON = 7
 SS_FLG_LINEAR_PITCH = 6 ;TODO: not implemented
 SS_FLG_CONT_VIB = 5 ;TODO: not implemented
 SS_FLG_PT_SLIDE = 1 ;TODO: not implemented
@@ -495,6 +495,9 @@ kn_play::
 	moveq #AMT_SONG_SLOTS-1,d7
 	lea k_song_slots(a6),a4
 .song_slot_loop
+	btst.b #SS_FLG_ON,ss_flags(a4)
+	beq .next_song_slot
+	
 	move.b ss_order(a4),d5
 	move.b ss_row(a4),d4
 	move.b ss_speed_cnt(a4),d3
@@ -622,6 +625,9 @@ kn_play::
 	lsl.l #1,d0
 	move.w (a0,d0),d0
 	lea (a6,d0.w),a4
+	
+	btst.b #SS_FLG_ON,ss_flags(a4)
+	beq .notrack
 	
 	
 	;;;;;;;;;;;;;;;;;;;;;;
