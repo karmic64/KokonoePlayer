@@ -2788,10 +2788,21 @@ get_effected_pitch:
 	
 	;;;;
 .no_linear_fm
+	move.w d0,d1
+	andi.w #$f800,d1 ;octave in d1
+	andi.l #$07ff,d0 ;fnum in d0
+	
+	add.l d4,d0
+	cmp.l #$0800,d0
+	blt .nlfr
+	
+	;too high
+	addi.w #$0800,d1
+	lsr.l #1,d0
 	
 	
-	;this should be more thourough
-	sub.l d4,d0
+.nlfr
+	or.w d1,d0
 	rts
 	
 	;;;;
