@@ -116,7 +116,7 @@ t_size = __SO
 	;anything song-global goes here, like speed and pattern breaks
 	
 SS_FLG_ON = 7
-SS_FLG_LINEAR_PITCH = 6 ;TODO: not implemented
+SS_FLG_LINEAR_PITCH = 6
 SS_FLG_CONT_VIB = 5
 SS_FLG_PT_SLIDE = 1
 SS_FLG_PT_ARP = 0
@@ -2603,13 +2603,28 @@ get_effected_note:
 	;;;; NOTE: this whole routine is really slow due to all the multiplications.
 	;;;; please contact me if you know how to make it faster without wasting a bunch of ROM
 get_effected_pitch:
+	;;; get song flags in d3
+	
+	lea k_chn_track(a6),a0
+	moveq #0,d0
+	move.b t_chn(a5),d0
+	lsl.l #1,d0
+	lea kn_track_song_slot_index_tbl,a0
+	move.w (a0,d0),d0
+	lea (a6,d0),a0
+	move.b ss_flags(a0),d3
+	
+	
 	;;; get total finetune in d4
 	;;; every 256 finetune units is a semitone up
 	
 	move.b t_finetune(a5),d4
 	ext.w d4
 	ext.l d4
+	btst #SS_FLG_LINEAR_PITCH,d3
+	beq .no_e5_adj
 	asl.l #1,d4 ;effect finetune takes 128 units to go up a semitone
+.no_e5_adj
 	
 	;if vibrato is on, add it to the finetune
 	tst.b t_vib(a5)
@@ -2653,7 +2668,12 @@ get_effected_pitch:
 	muls.w (a0,d1),d0
 	asr.l #8,d0
 	
+	btst #SS_FLG_LINEAR_PITCH,d3
+	bne .addvibft
+	asr.l #3,d0
+	
 	;; add vibrato amplitude to finetune
+.addvibft:
 	add.l d0,d4
 .novib:
 	
@@ -2680,6 +2700,9 @@ get_effected_pitch:
 .gotpitch:
 	
 	;;; we have the pitch, now apply finetune
+	btst #SS_FLG_LINEAR_PITCH,d3
+	beq .no_linear
+	
 	move.l d4,d3
 	andi.l #$ff,d4 ;finetune in d4
 	asr.l #8,d3 ;semitone difference in d3
@@ -2755,6 +2778,26 @@ get_effected_pitch:
 	swap d0
 .psg_no_fine
 	
+	rts
+	
+	
+	
+.no_linear
+	cmpi.b #10,t_chn(a5)
+	bhs .no_linear_psg
+	
+	;;;;
+.no_linear_fm
+	
+	
+	;this should be more thourough
+	sub.l d4,d0
+	rts
+	
+	;;;;
+.no_linear_psg
+	
+	sub.l d4,d0
 	rts
 	
 	
