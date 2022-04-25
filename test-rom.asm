@@ -291,14 +291,16 @@ mainloop:
 	
 	
 	;; handle init/stop commands
-	btst #6,d0 ;A stops the music
+	move.l d0,d7
+	
+	btst #6,d7 ;A stops the music
 	beq .nostop
 	pea music_ram
 	jsr kn_reset
 	addq.l #4,sp
 .nostop
 	
-	btst #5,d0 ;C inits music
+	btst #5,d7 ;C inits music
 	beq .noinit
 	moveq #0,d0
 	move.b song_num,d0
