@@ -43,9 +43,10 @@ fm_size = __SO
 	
 	; track
 T_FLG_ON = 7
-T_FLG_KEYOFF = 6
-T_FLG_NOTE_RESET = 5
-T_FLG_FM_UPDATE = 4
+T_FLG_CUT = 6
+T_FLG_KEYOFF = 5
+T_FLG_NOTE_RESET = 4
+T_FLG_FM_UPDATE = 3
 	
 	
 	clrso
@@ -416,7 +417,7 @@ kn_init::
 	dbra d0,.trackclear
 	
 	;init pattern player
-	move.b #(1 << T_FLG_ON) | (1 << T_FLG_KEYOFF) | (1 << T_FLG_FM_UPDATE),t_flags(a5)
+	move.b #(1 << T_FLG_ON) | (1 << T_FLG_CUT) | (1 << T_FLG_KEYOFF) | (1 << T_FLG_FM_UPDATE),t_flags(a5)
 	move.b (a1)+,d0
 	move.b d0,t_chn(a5)
 	move.l a0,t_seq_base(a5)
@@ -1138,6 +1139,7 @@ kn_play::
 	bne .blanknote
 	
 	bclr.b #T_FLG_KEYOFF,t_flags(a5) ;undo keyoff
+	bclr.b #T_FLG_CUT,t_flags(a5)
 	bset.b #T_FLG_NOTE_RESET,t_flags(a5)
 	
 	
@@ -1682,11 +1684,30 @@ kn_play::
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; tell what channel we're on
+	
+	;if the track is cut, don't set it
+	btst.b #T_FLG_CUT,t_flags(a5)
+	bne .nosetchn
+	;if any volume is 0, don't set it
+	tst.b ss_volume(a4)
+	beq .nosetchn
+	tst.b t_vol(a5)
+	beq .nosetchn
+	
+	;if a psg channel is keyed off, don't set it
+	cmpi.b #10,t_chn(a5)
+	blo .setchn
+	btst.b #T_FLG_KEYOFF,t_flags(a5)
+	bne .nosetchn
+	
+.setchn
+	;set the channel
 	lea k_chn_track(a6),a0
 	moveq #0,d0
 	move.b t_chn(a5),d0
 	move.b d7,(a0,d0)
 	
+.nosetchn
 	
 	
 	
@@ -2394,10 +2415,6 @@ kn_play::
 	lsl.l #1,d0
 	move.w (a5,d0),d0
 	lea (a6,d0),a5
-	
-	;;if track is keyed off stop here
-	btst.b #T_FLG_KEYOFF,t_flags(a5)
-	bne .psg_out_kill
 	
 	;;get volume
 	moveq #0,d0

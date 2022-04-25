@@ -274,7 +274,7 @@ mainloop:
 	move.b d0,d2
 	andi.b #9,d2
 	beq .noup
-	cmpi.b #22,d1
+	cmpi.b #23,d1
 	bhs .noup
 	addq.b #1,d1
 .noup
