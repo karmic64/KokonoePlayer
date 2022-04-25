@@ -155,6 +155,8 @@ k_tracks so.b t_size*AMT_TRACKS
 
 k_chn_track so.b AMT_CHANNELS
 
+k_prv_fm_track so.b 10
+
 k_psg_prv_noise so.b 1
 
 k_fm_prv_chn3_keyon so.b 1
@@ -307,6 +309,12 @@ kn_reset::
 	move.l d0,(a5)+
 	dbra d7,.clearram
 	
+	
+	moveq #-1,d0
+	lea k_prv_fm_track(a6),a5
+	move.l d0,(a5)+
+	move.l d0,(a5)+
+	move.w d0,(a5)+
 	
 	
 	
@@ -1796,7 +1804,9 @@ kn_play::
 	fm_write_1 #$40
 	
 	move.b #$fe,k_chn_track+2(a6)
-	move.b #$ff,k_fm_extd_chn3(a6)
+	st k_fm_extd_chn3(a6)
+	
+	st k_prv_fm_track+2(a6)
 	
 	
 	moveq #3,d7
@@ -1976,6 +1986,8 @@ kn_play::
 	moveq #0,d0
 	lea k_chn_track+0(a6),a0
 	move.b (a0,d7),d0
+	lea k_prv_fm_track(a6),a0
+	lea (a0,d7),a0
 	bpl .fm_out_go
 	cmpi.b #$fe,d0 ;if this channel was disabled by extd.chn3, do nothing
 	beq .fm_out_next
@@ -2010,10 +2022,28 @@ kn_play::
 .fm_out_go
 	
 	;;get track address
+	move.l d0,d1
 	lea track_index_tbl,a5
-	lsl.l #1,d0
-	move.w (a5,d0),d0
-	lea (a6,d0),a5
+	lsl.l #1,d1
+	move.w (a5,d1),d1
+	lea (a6,d1),a5
+	
+	;; if the track of the channel has changed and there is no note reset yet, kill the channel
+	move.b (a0),d1
+	cmp.b d0,d1
+	beq .fm_no_check_change
+	btst.b #T_FLG_NOTE_RESET,t_flags(a5)
+	beq .fm_out_kill
+	
+.fm_no_check_change
+	move.b d0,(a0)
+	
+	
+	cmpi.b #2,d7
+	bne .fm_out_no_reset_prv_chn3
+	moveq #-1,d0
+	move.l d0,k_prv_fm_track+6(a6)
+.fm_out_no_reset_prv_chn3
 	
 	
 	;; handle dac channel
