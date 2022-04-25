@@ -300,14 +300,28 @@ mainloop:
 	addq.l #4,sp
 .nostop
 	
-	btst #5,d7 ;C inits music
-	beq .noinit
+	btst #4,d7 ;B inits music (no loop)
+	beq .noinitonce
+	pea 0
 	moveq #0,d0
 	move.b song_num,d0
 	move.l d0,-(sp)
 	pea music_ram
 	jsr kn_init
 	addq.l #8,sp
+	addq.l #4,sp
+.noinitonce
+	
+	btst #5,d7 ;C inits music (loop)
+	beq .noinit
+	pea 1
+	moveq #0,d0
+	move.b song_num,d0
+	move.l d0,-(sp)
+	pea music_ram
+	jsr kn_init
+	addq.l #8,sp
+	addq.l #4,sp
 .noinit
 	
 	

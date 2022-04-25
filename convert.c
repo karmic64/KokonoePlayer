@@ -846,7 +846,7 @@ int read_module(char *filename)
 		fr_skip(&fr,0x10);
 		
 		/******** deflemask reader **********/
-		song.flags = 0xc0;
+		song.flags = 0x88;
 		
 		unsigned version = fr_read8u(&fr);
 		printf("DefleMask module, version %u.\n", version);
@@ -1381,9 +1381,9 @@ int read_module(char *filename)
 		uint8_t *flags = fr_ptr(&fr);
 		
 		/* linear pitch */
-		if (version < 36 || flags[1]) song.flags |= 0x40;
+		if (version < 36 || flags[1]) song.flags |= 0x08;
 		/* continuous vibrato */
-		if (version >= 62 && flags[15]) song.flags |= 0x20;
+		if (version >= 62 && flags[15]) song.flags |= 0x04;
 		
 		fr_skip(&fr, 20);
 		

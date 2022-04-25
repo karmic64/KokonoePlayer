@@ -117,8 +117,10 @@ t_size = __SO
 	;anything song-global goes here, like speed and pattern breaks
 	
 SS_FLG_ON = 7
-SS_FLG_LINEAR_PITCH = 6
-SS_FLG_CONT_VIB = 5
+SS_FLG_LOOP = 6
+
+SS_FLG_LINEAR_PITCH = 3
+SS_FLG_CONT_VIB = 2
 SS_FLG_PT_SLIDE = 1
 SS_FLG_PT_ARP = 0
 
@@ -335,7 +337,7 @@ kn_reset::
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; Init routine
 kn_init::
-	cargs #(6+5+1)*4, .arg_music_base.l, .arg_song_id.l
+	cargs #(6+5+1)*4, .arg_music_base.l, .arg_song_id.l, .arg_loop.l
 	
 	movem.l d2-d7/a2-a6,-(sp)
 	
@@ -370,7 +372,12 @@ kn_init::
 	
 	
 	;;; set up song slot
-	move.b (a0)+,ss_flags(a4)
+	move.b (a0)+,d0
+	tst.l .arg_loop(a7)
+	beq .noloop
+	bset #SS_FLG_LOOP,d0
+.noloop
+	move.b d0,ss_flags(a4)
 	st ss_volume(a4)
 	
 	move.b (a0)+,ss_patt_size(a4)
@@ -569,6 +576,14 @@ kn_play::
 	
 	cmp.b d5,d2 ;if current order < new order, DON'T reset song state
 	blo .next_song_reset
+	
+	;see if we need to loop or not
+	btst.b #SS_FLG_LOOP,ss_flags(a4)
+	bne .song_yes_loop
+	sf ss_flags(a4)
+	bra .next_song_slot
+	
+.song_yes_loop
 	
 	;this is kind of a lame solution, but actually saving all the song state
 	;would waste a lot of RAM.
