@@ -9,7 +9,7 @@ KN_DIR := ../
 KN_SONG_SLOTS := 2
 KN_MODULES := ../test-mods/*
 
-include ../Makefile
+include $(KN_DIR)Makefile
 
 
 test-rom.gen: test-rom.asm font.rom exceptions.asm $(KN_68K_PLAYER) $(KN_DEPS_68K_PLAYER)
