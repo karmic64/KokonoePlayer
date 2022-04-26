@@ -1,12 +1,8 @@
 private-mods
 
 
-convert
-generate-data
-
-
-COMPILED-MODULE.asm
-GENERATED-DATA.asm
+kn-*
+KN-*
 
 
 *.exe

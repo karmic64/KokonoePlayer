@@ -343,7 +343,7 @@ mainloop:
 	
 	
 	
-	include "68k-player.asm"
+	include "../68k-player.asm"
 	
 	
 	

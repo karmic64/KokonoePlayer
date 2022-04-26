@@ -2428,13 +2428,13 @@ read_module_cleanup:
 
 int main(int argc, char *argv[])
 {
-	if (argc < 2)
+	if (argc < 3)
 	{
 		puts(
 			"DefleMask/Furnace module converter written by karmic\n"
 			"\n"
 			"Usage:\n"
-			"  convert modulenames..."
+			"  convert outfile modulenames..."
 		);
 		return EXIT_FAILURE;
 	}
@@ -2446,7 +2446,7 @@ int main(int argc, char *argv[])
 		instrument_histogram[i].count = 0;
 	}
 	
-	for (int i = 1; i < argc; i++)
+	for (int i = 2; i < argc; i++)
 		read_module(argv[i]);
 	
 	if (!songs)
@@ -2547,10 +2547,10 @@ int main(int argc, char *argv[])
 	time_t outtime;
 	time(&outtime);
 	puts("\nWriting output data...");
-	FILE *f = fopen("COMPILED-MODULE.asm", "w");
+	FILE *f = fopen(argv[1], "w");
 	if (!f)
 	{
-		printf("Can't open for writing: %s\n",strerror(errno));
+		printf("Can't open %s for writing: %s\n",argv[1],strerror(errno));
 		return EXIT_FAILURE;
 	}
 	
