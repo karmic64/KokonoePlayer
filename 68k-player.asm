@@ -1763,11 +1763,10 @@ kn_play::
 	
 	
 	lea Z80+$4000,a3 ;part 1 reg port
-	lea 1(a3),a4 ;part 1 data port
 	
 	
 	macro fm_reg
-		move.b \1,(a1)
+		move.b \1,(a2)
 	endm
 	macro fm_reg_1
 		move.b \1,(a3)
@@ -1777,13 +1776,13 @@ kn_play::
 .fm_write_wait_\@:
 		tst.b (a3)
 		bmi .fm_write_wait_\@
-		move.b \1,(a2)
+		move.b \1,1(a2)
 	endm
 	macro fm_write_1
 .fm_write_1_wait_\@:
 		tst.b (a3)
 		bmi .fm_write_1_wait_\@
-		move.b \1,(a4)
+		move.b \1,1(a3)
 	endm
 	
 	
@@ -1848,9 +1847,20 @@ kn_play::
 	addq.b #4,d5
 	
 	moveq #0,d0
-	move.b (a2,d7),d0
+	lea k_chn_track+6(a6),a0
+	move.b (a0,d7),d0
+	lea k_prv_fm_track+6(a6),a0
+	lea (a0,d7),a0
 	bpl .fm_3_out_go
 .fm_3_out_kill:
+	st (a0) ;set channel as killed
+	
+	;set TL of operator to $7f
+	move.l d6,d0
+	ori.b #$40,d0
+	fm_reg_1 d0
+	fm_write_1 #$ff
+	
 	;set RR of operator to $0f
 	move.l d6,d0
 	ori.b #$80,d0
@@ -1867,12 +1877,30 @@ kn_play::
 	bra .fm_3_out_next
 	
 .fm_3_out_go:
+
+	move.l d0,d1
+	lsl.l #1,d1
 	
 	;;get track address
 	lea track_index_tbl,a5
-	lsl.l #1,d0
-	move.w (a5,d0),d0
-	lea (a6,d0),a5
+	move.w (a5,d1),d2
+	lea (a6,d2),a5
+	
+	;;get song slot address
+	lea kn_track_song_slot_index_tbl,a4
+	move.w (a4,d1),d2
+	lea (a6,d2),a4
+	
+	;; if the track of the channel has changed and there is no note reset yet, kill the channel
+	move.b (a0),d1
+	cmp.b d0,d1
+	beq .fm_3_no_check_change
+	btst.b #T_FLG_NOTE_RESET,t_flags(a5)
+	beq .fm_3_out_kill
+	
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
+	move.b d0,(a0)
+.fm_3_no_check_change
 	
 	
 	;; if the note will be reset, keyoff first
@@ -1987,8 +2015,7 @@ kn_play::
 	
 	;;;;;;;;;;;;;;;;;;; standard fm out
 .fm_normal_out:
-	lea 2(a3),a1 ;"current" part reg port
-	lea 3(a3),a2 ;"current" part data port
+	lea 2(a3),a2 ;"current" part
 	
 	moveq #5,d7
 .fm_out_loop:
@@ -2010,6 +2037,8 @@ kn_play::
 	cmpi.b #$fe,d0 ;if this channel was disabled by extd.chn3, do nothing
 	beq .fm_out_next
 .fm_out_kill:
+	st (a0) ;set channel as killed
+	
 	;set RRs of operators to $f
 	move.l d6,d0
 	ori.b #$80,d0
@@ -2038,13 +2067,19 @@ kn_play::
 	
 	bra .fm_out_next
 .fm_out_go
+
+	move.l d0,d1
+	lsl.l #1,d1
 	
 	;;get track address
-	move.l d0,d1
 	lea track_index_tbl,a5
-	lsl.l #1,d1
-	move.w (a5,d1),d1
-	lea (a6,d1),a5
+	move.w (a5,d1),d2
+	lea (a6,d2),a5
+	
+	;;get song slot address
+	lea kn_track_song_slot_index_tbl,a4
+	move.w (a4,d1),d2
+	lea (a6,d2),a4
 	
 	;; if the track of the channel has changed and there is no note reset yet, kill the channel
 	move.b (a0),d1
@@ -2053,8 +2088,9 @@ kn_play::
 	btst.b #T_FLG_NOTE_RESET,t_flags(a5)
 	beq .fm_out_kill
 	
-.fm_no_check_change
+	bset.b #T_FLG_FM_UPDATE,t_flags(a5)
 	move.b d0,(a0)
+.fm_no_check_change
 	
 	
 	cmpi.b #2,d7
@@ -2674,22 +2710,16 @@ get_effected_note:
 	
 	
 	;;;;;;;;;;;;;;;;;;;;
+	;; song slot in a4
 	;; track in a5
-	;; this routine can't touch d5-d7/a5-a6
+	;; this routine can't touch d5-d7/a2-a6
 	;; returns pitch in d0
 	;;;; NOTE: this whole routine is really slow due to all the multiplications.
 	;;;; please contact me if you know how to make it faster without wasting a bunch of ROM
 get_effected_pitch:
 	;;; get song flags in d3
 	
-	lea k_chn_track(a6),a0
-	moveq #0,d0
-	move.b t_chn(a5),d0
-	lsl.l #1,d0
-	lea kn_track_song_slot_index_tbl,a0
-	move.w (a0,d0),d0
-	lea (a6,d0),a0
-	move.b ss_flags(a0),d3
+	move.b ss_flags(a4),d3
 	
 	
 	;;; get total finetune in d4
