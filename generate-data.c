@@ -43,7 +43,7 @@ int main()
 		unsigned v1 = v & 0x0f;
 		unsigned v2 = v >> 4;
 		
-		unsigned ov = (unsigned)round(v1 * (v2 / 15.0)) ^ 0x0f;
+		unsigned ov = (unsigned)round(v1 * (v2 / 15.0));
 		fprintf(f,"%u%c", ov, v < 256-1 ? ',' : '\n');
 	}
 	

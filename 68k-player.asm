@@ -2440,7 +2440,6 @@ kn_play::
 	
 	lea psg_volume_tbl,a2
 	lea PSG,a3
-	lea k_chn_track+10(a6),a4
 	
 	moveq #3,d7
 .psg_out_loop
@@ -2450,7 +2449,8 @@ kn_play::
 	
 	;;is the channel occupied?
 	moveq #0,d0
-	move.b (a4,d7),d0
+	lea k_chn_track+10(a6),a0
+	move.b (a0,d7),d0
 	bpl .psg_out_ok
 .psg_out_kill:
 	ori.b #$9f,d6
@@ -2458,11 +2458,17 @@ kn_play::
 	bra .psg_out_next
 .psg_out_ok:
 	
+	lsl.l #1,d0
+	
 	;;get track address
 	lea track_index_tbl,a5
-	lsl.l #1,d0
-	move.w (a5,d0),d0
-	lea (a6,d0),a5
+	move.w (a5,d0),d1
+	lea (a6,d1),a5
+	
+	;;get song slot address
+	lea kn_track_song_slot_index_tbl,a4
+	move.w (a4,d0),d1
+	lea (a6,d1),a4
 	
 	;;get volume
 	moveq #0,d0
@@ -2470,6 +2476,12 @@ kn_play::
 	lsl.b #4,d0
 	or.b t_macro_vol(a5),d0
 	move.b (a2,d0),d0
+	move.b ss_volume(a4),d1
+	andi.b #$f0,d1
+	or.b d1,d0
+	move.b (a2,d0),d0
+	not.b d0
+	andi.b #$0f,d0
 	or.b d6,d0
 	ori.b #$90,d0
 	move.b d0,(a3)
@@ -2524,7 +2536,7 @@ kn_play::
 	bne .psg_out_next
 	
 	move.b #$40,d6 ;change channel id to tone2
-	move.b #$ff,2(a4) ;disable tone2 output
+	move.b #$ff,k_chn_track+10+2(a6) ;disable tone2 output
 	
 	;;; actually output period
 .psg_not_noise
