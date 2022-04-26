@@ -1711,11 +1711,14 @@ kn_play::
 	;if the track is cut, don't set it
 	btst.b #T_FLG_CUT,t_flags(a5)
 	bne .nosetchn
+	
+	rem ;disabled for now, error-prone
 	;if any volume is 0, don't set it
 	tst.b ss_volume(a4)
 	beq .nosetchn
 	tst.b t_vol(a5)
 	beq .nosetchn
+	erem
 	
 	;if a psg channel is keyed off, don't set it
 	cmpi.b #10,t_chn(a5)
