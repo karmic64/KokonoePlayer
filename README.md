@@ -7,8 +7,8 @@ Unlike practically all existing Genesis sound drivers out there, this is not jus
 ## Prerequisites
 
 To use KokonoePlayer, you need the following:
-* A Unix environment with `make` installed. If you're on Windows, [msys2](https://www.msys2.org/) is a good option.
-* A native C compiler (preferably `gcc`), to compile the module converter and data generator.
+* `make`, and a Makefile that builds your project. Other build systems are unsupported.
+* A **native** C compiler (preferably `gcc`), to compile the module converter and data generator.
 * [vasm](http://sun.hasenbraten.de/vasm/), to assemble the 68000 part. When running `make`, use `SYNTAX=mot CPU=m68k`. The output executable should be named `vasmm68k_mot`.
 * [WLA-DX](https://www.villehelin.com/wla.html), to assemble the Z80 part.
 * A 68000 ELF-compatible linker, to link the KokonoePlayer output file into your ROM.
@@ -32,6 +32,14 @@ If you are using C, find any rule that compiles individual source files into out
 If you have a phony clean target, add `kn-clean` as a dependency.
 
 Now find the rule in your `Makefile` that links the final ROM. Add `$(KN_OUT)` both as a dependency and an input file. Now, the next time you build your ROM, the KokonoePlayer .elf file will be built and linked with it.
+
+If you look at the KokonoePlayer `Makefile`, there are a wide variety of other variables which you can override as well. For example, if your build tools are not in PATH, you could do something like this in your `Makefile` before including the KokonoePlayer `Makefile`:
+```make
+KN_CC := ./tools/gcc/gcc.exe
+KN_VASM := ./tools/vasm/vasmm68k_mot.exe
+KN_WLAZ80 := ./tools/wla/wla-z80.exe
+KN_WLALINK := ./tools/wla/wlalink.exe
+```
 
 ## Using the KokonoePlayer functions
 
