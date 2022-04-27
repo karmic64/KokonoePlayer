@@ -43,15 +43,15 @@ unsigned kn_func(void * the_pointer, unsigned the_int, unsigned short the_short)
 You push the parameters on the stack in **reverse order**, `jsr` to the relevant label, then pull the parameters off. For the above function:
 ```m68k
 	; push them on...
-	move.w #the_short,-(sp)
-	move.l #the_int,-(sp)
+	pea the_short
+	pea the_int
 	pea the_pointer
 	; call the function...
 	jsr kn_func
 	; then pull them off.
-	addq.l #8,sp
-	addq.l #2,sp
+	lea 12(sp),sp
 ```
+Parameters are ALWAYS pushed as longs, even if the actual sizes are smaller!
 
 The routines themselves are guaranteed to preserve the values of `d2-d7/a2-a7`, but `d0-d1/a0-a1` are scratch registers and you should not rely on their values being preserved. Return values are passed in `d0`.
 
@@ -75,7 +75,7 @@ Resets the player variables to a known state, and uploads the Z80 code. You **mu
 
 ### kn_init
 ```c
-void kn_init(unsigned short song_slot, unsigned short song_id);
+void kn_init(unsigned song_slot, unsigned song_id);
 ```
 Initializes song `song_id` playback in the song slot `song_slot`. Song IDs are assigned incrementally starting from 0, in the order you gave when assigning the value of `KN_MODULES`.
 
@@ -91,31 +91,31 @@ Run this routine once per VBlank to play music.
 
 ### kn_volume
 ```c
-void kn_volume(unsigned short song_slot, unsigned short volume);
+void kn_volume(unsigned song_slot, unsigned volume);
 ```
 Sets the global volume of song slot `song_slot` to `volume`. The value ranges from $00 (dead silent) to $ff (full blast). The value is reset to $ff whenever `kn_init` is called.
 
 ### kn_seek
 ```c
-void kn_seek(unsigned short song_slot, unsigned short order);
+void kn_seek(unsigned song_slot, unsigned order);
 ```
 Seeks playback of song slot `song_slot` to order `order`.
 
 ### kn_pause
 ```c
-void kn_pause(unsigned short song_slot);
+void kn_pause(unsigned song_slot);
 ```
 Pauses playback of song slot `song_slot`.
 
 ### kn_resume
 ```c
-void kn_resume(unsigned short song_slot);
+void kn_resume(unsigned song_slot);
 ```
 Resumes playback of song slot `song_slot`, if it was paused by `kn_pause`.
 
 ### kn_stop
 ```c
-void kn_stop(unsigned short song_slot);
+void kn_stop(unsigned song_slot);
 ```
 Stops playback of song slot `song_slot`.
 
