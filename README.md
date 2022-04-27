@@ -29,6 +29,8 @@ Replace the `KN_DIR` value with the path to the root of the KokonoePlayer source
 
 If you are using C, find any rule that compiles individual source files into output files. Add the option `-I $(KN_DIR)`, allowing the compiler to locate the `kn.h` header file.
 
+If you have a phony clean target, add `kn-clean` as a dependency.
+
 Now find the rule in your `Makefile` that links the final ROM. Add `$(KN_OUT)` both as a dependency and an input file. Now, the next time you build your ROM, the KokonoePlayer .elf file will be built and linked with it.
 
 ## Using the KokonoePlayer functions
