@@ -8,14 +8,14 @@
 #define KN_NO_LOOP 0x0000
 
 void kn_reset();
-void kn_init(unsigned short song_id, unsigned short song_slot);
+void kn_init(unsigned short, unsigned short);
 void kn_play();
 
-void kn_volume(unsigned short volume, unsigned short song_slot);
-void kn_seek(unsigned short order, unsigned short song_slot);
-void kn_pause(unsigned short song_slot);
-void kn_resume(unsigned short song_slot);
-void kn_stop(unsigned short song_slot);
+void kn_volume(unsigned short, unsigned short);
+void kn_seek(unsigned short, unsigned short);
+void kn_pause(unsigned short);
+void kn_resume(unsigned short);
+void kn_stop(unsigned short);
 
 unsigned kn_sync();
 

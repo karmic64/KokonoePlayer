@@ -75,7 +75,7 @@ Resets the player variables to a known state, and uploads the Z80 code. You **mu
 
 ### kn_init
 ```c
-void kn_init(unsigned short song_id, unsigned short song_slot);
+void kn_init(unsigned short song_slot, unsigned short song_id);
 ```
 Initializes song `song_id` playback in the song slot `song_slot`. Song IDs are assigned incrementally starting from 0, in the order you gave when assigning the value of `KN_MODULES`.
 
@@ -91,13 +91,13 @@ Run this routine once per VBlank to play music.
 
 ### kn_volume
 ```c
-void kn_volume(unsigned short volume, unsigned short song_slot);
+void kn_volume(unsigned short song_slot, unsigned short volume);
 ```
 Sets the global volume of song slot `song_slot` to `volume`. The value ranges from $00 (dead silent) to $ff (full blast). The value is reset to $ff whenever `kn_init` is called.
 
 ### kn_seek
 ```c
-void kn_seek(unsigned short order, unsigned short song_slot);
+void kn_seek(unsigned short song_slot, unsigned short order);
 ```
 Seeks playback of song slot `song_slot` to order `order`.
 
