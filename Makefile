@@ -22,7 +22,7 @@ else
 KN_DOTEXE ?=
 endif
 
-KN_CC ?= $(CC)
+KN_CC ?= gcc
 KN_VASM ?= vasmm68k_mot
 KN_WLAZ80 ?= wla-z80
 KN_WLALINK ?= wlalink
