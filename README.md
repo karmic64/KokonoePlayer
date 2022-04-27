@@ -59,6 +59,12 @@ The routines themselves are guaranteed to preserve the values of `d2-d7/a2-a7`, 
 
 Simply `#include <kn.h>`, then call the functions as you would any other. Make sure you set `$(KN_DIR)` as a header file directory in your `Makefile`!
 
+### Thread-safety precautions
+
+KokonoePlayer functions are **not** thread-safe. You must ensure that only one is ever called at a time.
+
+To request the Z80 bus (e.g. for DMA), it is OK to simply write directly to the bus request register. However, do not call `kn_reset` or `kn_play` while the Z80 bus must be held, because they will release the bus.
+
 ## KokonoePlayer function reference
 
 ### kn_reset
