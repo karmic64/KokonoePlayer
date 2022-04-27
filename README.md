@@ -79,7 +79,7 @@ void kn_init(unsigned short song_slot, unsigned short song_id);
 ```
 Initializes song `song_id` playback in the song slot `song_slot`. Song IDs are assigned incrementally starting from 0, in the order you gave when assigning the value of `KN_MODULES`.
 
-The song slot parameter also determines whether a song should loop or not. OR the parameter with `KN_NO_LOOP` if not, or `KN_LOOP` if so.
+The song ID parameter also determines whether a song should loop or not. OR the parameter with `KN_NO_LOOP` if not, or `KN_LOOP` if so.
 
 Higher-numbered song slots are higher priority. For example, you could have 4 song slots, 0 for music, 1 and 2 for sound effects, and 3 for music cues that overtake all other sound (for example, the extra life jingle in Sonic).
 
