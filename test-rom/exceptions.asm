@@ -355,73 +355,73 @@ ex_i0:
     bra exception_main
     ;abuse the upper byte of the vector for the interrupt level
 ex_i1:
-    move.l #em_interrupt | (1 << 24),-(a7)
+    move.l #em_interrupt + (1 << 24),-(a7)
     bra exception_main
 ex_i2:
-    move.l #em_interrupt | (2 << 24),-(a7)
+    move.l #em_interrupt + (2 << 24),-(a7)
     bra exception_main
 ex_i3:
-    move.l #em_interrupt | (3 << 24),-(a7)
+    move.l #em_interrupt + (3 << 24),-(a7)
     bra exception_main
 ex_i4:
-    move.l #em_interrupt | (4 << 24),-(a7)
+    move.l #em_interrupt + (4 << 24),-(a7)
     bra exception_main
 ex_i5:
-    move.l #em_interrupt | (5 << 24),-(a7)
+    move.l #em_interrupt + (5 << 24),-(a7)
     bra exception_main
 ex_i6:
-    move.l #em_interrupt | (6 << 24),-(a7)
+    move.l #em_interrupt + (6 << 24),-(a7)
     bra exception_main
 ex_i7:
-    move.l #em_interrupt | (7 << 24),-(a7)
+    move.l #em_interrupt + (7 << 24),-(a7)
     bra exception_main
 ex_trap0:
-    move.l #em_trap | (0 << 24),-(a7)
+    move.l #em_trap + (0 << 24),-(a7)
     bra exception_main
 ex_trap1:
-    move.l #em_trap | (1 << 24),-(a7)
+    move.l #em_trap + (1 << 24),-(a7)
     bra exception_main
 ex_trap2:
-    move.l #em_trap | (2 << 24),-(a7)
+    move.l #em_trap + (2 << 24),-(a7)
     bra exception_main
 ex_trap3:
-    move.l #em_trap | (3 << 24),-(a7)
+    move.l #em_trap + (3 << 24),-(a7)
     bra exception_main
 ex_trap4:
-    move.l #em_trap | (4 << 24),-(a7)
+    move.l #em_trap + (4 << 24),-(a7)
     bra exception_main
 ex_trap5:
-    move.l #em_trap | (5 << 24),-(a7)
+    move.l #em_trap + (5 << 24),-(a7)
     bra exception_main
 ex_trap6:
-    move.l #em_trap | (6 << 24),-(a7)
+    move.l #em_trap + (6 << 24),-(a7)
     bra exception_main
 ex_trap7:
-    move.l #em_trap | (7 << 24),-(a7)
+    move.l #em_trap + (7 << 24),-(a7)
     bra exception_main
 ex_trap8:
-    move.l #em_trap | (8 << 24),-(a7)
+    move.l #em_trap + (8 << 24),-(a7)
     bra exception_main
 ex_trap9:
-    move.l #em_trap | (9 << 24),-(a7)
+    move.l #em_trap + (9 << 24),-(a7)
     bra exception_main
 ex_trap10:
-    move.l #em_trap | (10 << 24),-(a7)
+    move.l #em_trap + (10 << 24),-(a7)
     bra exception_main
 ex_trap11:
-    move.l #em_trap | (11 << 24),-(a7)
+    move.l #em_trap + (11 << 24),-(a7)
     bra exception_main
 ex_trap12:
-    move.l #em_trap | (12 << 24),-(a7)
+    move.l #em_trap + (12 << 24),-(a7)
     bra exception_main
 ex_trap13:
-    move.l #em_trap | (13 << 24),-(a7)
+    move.l #em_trap + (13 << 24),-(a7)
     bra exception_main
 ex_trap14:
-    move.l #em_trap | (14 << 24),-(a7)
+    move.l #em_trap + (14 << 24),-(a7)
     bra exception_main
 ex_trap15:
-    move.l #em_trap | (15 << 24),-(a7)
+    move.l #em_trap + (15 << 24),-(a7)
     bra exception_main
     
     

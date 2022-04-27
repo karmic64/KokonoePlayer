@@ -58,8 +58,12 @@ KN_OUT_68K_PLAYER ?= $(KN_DIR)68k-player.elf
 KN_OUT_Z80_PLAYER ?= $(KN_DIR)z80-player.o
 KN_OUT_Z80_PLAYER_LN ?= $(KN_DIR)z80-player.bin
 
-
 KN_DEPS_68K_PLAYER ?= $(KN_68K_PLAYER) $(KN_OUT_Z80_PLAYER_LN) $(KN_OUT_COMPILED_MODULE) $(KN_OUT_GENERATED_DATA)
+
+
+# for external use
+KN_OUT := $(KN_OUT_68K_PLAYER)
+KN_DEPS = $(KN_DEPS_68K_PLAYER)
 
 
 ### phony targets

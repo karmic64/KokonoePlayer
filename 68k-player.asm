@@ -1,9 +1,12 @@
+	section kn
+
 Z80 = $a00000
 Z80BUSREQ = $a11100
 Z80RESET = $a11200
 
 PSG = $c00011
-
+	
+	
 
 	include "KN-COMPILED-MODULE.asm"
 

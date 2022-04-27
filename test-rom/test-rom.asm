@@ -22,6 +22,7 @@ VDPDATA     = $c00000
 VDPCTRL     = $c00004
 HVCOUNTER   = $c00008
 
+Z80BUSREQ = $a11100
 
 
 ;vdpctrl transfer id codes
@@ -105,7 +106,8 @@ SetVDPRegsA macro
 	
 	
 	
-	org 0
+	section header
+	
 	dl $ffff8000
 	dl reset
 	
@@ -119,9 +121,9 @@ SetVDPRegsA macro
     dl ex_trace
     dl ex_unimplemented_a
     dl ex_unimplemented_f
-    org $3c
+    dcb.b $3c-*,0
     dl ex_uninitialized
-    org $60
+    dcb.b $60-*,0
     dl ex_i0
     dl ex_i1
     dl ex_i2
@@ -147,7 +149,7 @@ SetVDPRegsA macro
     dl ex_trap14
     dl ex_trap15
 	
-	org $100
+  dcb.b $100-*,0
 	db "SEGA MEGA DRIVE "
 	db "KARMIC  2022.MAR"
 	db "SOUND DEMO                                      "
@@ -164,29 +166,31 @@ SetVDPRegsA macro
 	
 	
 	
+	code
+	
 	include "exceptions.asm"
 	
 	
 	pushsection
-	offset $ffff8000
+	bss
 	
 rawjoy
-	db 0
+	dcb.b 1
 joy
-	db 0
+	dcb.b 1
 	
 song_num
-	db 0
+	dcb.b 1
 	
 	
-	align 5
+	align 1
 music_ram
-	ds.b KN_VAR_SIZE
 	
 	popsection
 	
 	
 	
+_start::
 reset:
 	move #$2700,sr
 	
@@ -340,10 +344,6 @@ mainloop:
 	
 	
 	bra mainloop
-	
-	
-	
-	include "../68k-player.asm"
 	
 	
 	

@@ -2,7 +2,7 @@
 .PHONY: default clean
 default: test-rom.gen
 clean: kn-clean
-	-rm -f test-rom.gen
+	-rm -f test-rom.elf test-rom.gen
 
 
 KN_DIR := ../
@@ -12,5 +12,10 @@ KN_MODULES := ../test-mods/*
 include $(KN_DIR)Makefile
 
 
-test-rom.gen: test-rom.asm font.rom exceptions.asm $(KN_68K_PLAYER) $(KN_DEPS_68K_PLAYER)
-	$(KN_VASM) -Fbin $(KN_VASMFLAGS) -o $@ $<
+LD := m68k-linux-gnu-ld
+
+test-rom.elf: test-rom.asm font.rom exceptions.asm
+	$(KN_VASM) -Felf $(KN_VASMFLAGS) -o $@ $<
+
+test-rom.gen: link.ld test-rom.elf $(KN_OUT)
+	$(LD) -T link.ld --oformat binary -o $@ test-rom.elf $(KN_OUT)
