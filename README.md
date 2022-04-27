@@ -37,15 +37,15 @@ Now find the rule in your `Makefile` that links the final ROM. Add `$(KN_OUT)` b
 
 KokonoePlayer has been designed to interface with C, thus the routines use the standard `gcc` C calling convention. For example, take the following function prototype:
 ```c
-unsigned kn_func(void * music_base, unsigned the_int, unsigned short the_short)
+unsigned kn_func(void * the_pointer, unsigned the_int, unsigned short the_short)
 ```
 
 You push the parameters on the stack in **reverse order**, `jsr` to the relevant label, then pull the parameters off. For the above function:
 ```m68k
 	; push them on...
 	move.w #the_short,-(sp)
-	pea the_int
-	pea music_base
+	move.l #the_int,-(sp)
+	pea the_pointer
 	; call the function...
 	jsr kn_func
 	; then pull them off.
