@@ -43,6 +43,8 @@ KN_68K_PLAYER ?= $(KN_DIR)68k-player.asm
 KN_Z80_PLAYER ?= $(KN_DIR)z80-player.asm
 KN_Z80_PLAYER_LN ?= $(KN_DIR)z80-player.ln
 
+KN_H ?= $(KN_DIR)kn.h
+
 
 ### outputs
 
