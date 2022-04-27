@@ -78,7 +78,7 @@ kn-default:
 kn-clean:
 	-rm -f $(KN_OUT_CONVERT) $(KN_OUT_GENERATE_DATA) \
 		 $(KN_OUT_COMPILED_MODULE) $(KN_OUT_GENERATED_DATA) \
-		 $(KN_OUT_68K_PLAYER) $(KN_OUT_Z80_PLAYER) $(KN_OUT_Z80_PLAYER_LN)
+		 $(KN_OUT_68K_PLAYER) $(KN_OUT_Z80_PLAYER) $(KN_OUT_Z80_PLAYER_LN) $(KN_Z80_PLAYER_LN)
 
 
 ### rules
@@ -95,10 +95,11 @@ $(KN_OUT_GENERATED_DATA): $(KN_OUT_GENERATE_DATA)
 $(KN_OUT_Z80_PLAYER): $(KN_Z80_PLAYER)
 	$(KN_WLAZ80) $(KN_WLAZ80FLAGS) -o $@ $<
 
-# changing the directory is required, wlalink doesn't support include paths
-# TODO: since we change the directory first, KN_WLALINK is not relative to the same place as the other KN_ build tool variables
-$(KN_OUT_Z80_PLAYER_LN): $(KN_Z80_PLAYER_LN) $(KN_OUT_Z80_PLAYER)
-	cd $(KN_DIR) && $(KN_WLALINK) $(KN_WLALINKFLAGS) $(subst $(KN_DIR),,$<) $(subst $(KN_DIR),,$@)
+# wlalink doesn't support include paths, so dynamically generate link file
+$(KN_OUT_Z80_PLAYER_LN): $(KN_OUT_Z80_PLAYER)
+	echo [objects] > $(KN_Z80_PLAYER_LN) && \
+		echo $(KN_OUT_Z80_PLAYER) >> $(KN_Z80_PLAYER_LN) && \
+		$(KN_WLALINK) $(KN_WLALINKFLAGS) $(KN_Z80_PLAYER_LN) $@
 
 $(KN_OUT_68K_PLAYER): $(KN_DEPS_68K_PLAYER)
 	$(KN_VASM) -Felf $(KN_VASMFLAGS) -o $@ $<
