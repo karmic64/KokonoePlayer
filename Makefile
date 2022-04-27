@@ -96,6 +96,7 @@ $(KN_OUT_Z80_PLAYER): $(KN_Z80_PLAYER)
 	$(KN_WLAZ80) $(KN_WLAZ80FLAGS) -o $@ $<
 
 # changing the directory is required, wlalink doesn't support include paths
+# TODO: since we change the directory first, KN_WLALINK is not relative to the same place as the other KN_ build tool variables
 $(KN_OUT_Z80_PLAYER_LN): $(KN_Z80_PLAYER_LN) $(KN_OUT_Z80_PLAYER)
 	cd $(KN_DIR) && $(KN_WLALINK) $(KN_WLALINKFLAGS) $(subst $(KN_DIR),,$<) $(subst $(KN_DIR),,$@)
 
