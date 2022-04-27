@@ -132,6 +132,8 @@ SS_FLG_PT_ARP = 0
 	clrso
 ss_flags so.b 1
 ss_volume so.b 1
+
+ss_song_id so.w 1
 	
 ss_order so.b 1
 ss_patt_break so.b 1 ;$ff - no skip
@@ -328,6 +330,16 @@ kn_reset::
 	
 	
 	
+	moveq #KN_SONG_SLOTS-1,d7
+	lea k_song_slots(a6),a4
+.clearss:
+	move.w d0,ss_song_id(a4)
+	move.b d0,ss_patt_break(a4)
+	adda.l #ss_size,a4
+	dbra d7,.clearss
+	
+	
+	
 	move.b #2,k_fm_prv_chn3_keyon(a6)
 	
 	;default value obtained by poking in a vgm log
@@ -380,12 +392,14 @@ kn_init::
 	
 	;;; set up song slot
 	move.b (a0)+,d0
-	tst.l .arg_song_id(a7)
+	move.l .arg_song_id(a7),d1
 	bpl .noloop
 	bset #SS_FLG_LOOP,d0
 .noloop
 	move.b d0,ss_flags(a4)
 	st ss_volume(a4)
+	
+	move.w d1,ss_song_id(a4)
 	
 	move.b (a0)+,ss_patt_size(a4)
 	
@@ -510,7 +524,7 @@ kn_play::
 	
 	
 	
-	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; handle song slots
 	moveq #0,d7
 	lea k_song_slots(a6),a4
@@ -585,6 +599,7 @@ kn_play::
 	btst.b #SS_FLG_LOOP,ss_flags(a4)
 	bne .song_yes_loop
 	sf ss_flags(a4)
+	move.w #$ffff,ss_song_id(a4)
 	bra .next_song_slot
 	
 .song_yes_loop
@@ -2938,6 +2953,115 @@ get_effected_pitch:
 	
 	sub.l d4,d0
 	rts
+	
+	
+	
+	
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; user utility functions
+kn_volume::
+	cargs #4, .arg_song_slot.l, .arg_volume.l
+	
+	lea song_slot_index_tbl,a0
+	move.l .arg_song_slot(sp),d0
+	lsl.l #1,d0
+	move.w (a0,d0),d0
+	
+	lea music_ram+k_song_slots,a0
+	lea (a0,d0),a0
+	
+	move.b .arg_volume+3(sp),ss_volume(a0)
+	
+	rts
+	
+	
+	
+kn_seek::
+	cargs #4, .arg_song_slot.l, .arg_order.l
+	
+	lea song_slot_index_tbl,a0
+	move.l .arg_song_slot(sp),d0
+	lsl.l #1,d0
+	move.w (a0,d0),d0
+	
+	lea music_ram+k_song_slots,a0
+	lea (a0,d0),a0
+	
+	move.b .arg_order+3(sp),ss_patt_break(a0)
+	
+	rts
+	
+	
+kn_pause::
+	cargs #4, .arg_song_slot.l
+	
+	lea song_slot_index_tbl,a0
+	move.l .arg_song_slot(sp),d0
+	lsl.l #1,d0
+	move.w (a0,d0),d0
+	
+	lea music_ram+k_song_slots,a0
+	lea (a0,d0),a0
+	
+	bclr.b #SS_FLG_ON,ss_flags(a0)
+	
+	rts
+	
+	
+kn_resume::
+	cargs #4, .arg_song_slot.l
+	
+	lea song_slot_index_tbl,a0
+	move.l .arg_song_slot(sp),d0
+	lsl.l #1,d0
+	move.w (a0,d0),d0
+	
+	lea music_ram+k_song_slots,a0
+	lea (a0,d0),a0
+	
+	tst.w ss_song_id(a0)
+	bmi .no
+	
+	bset.b #SS_FLG_ON,ss_flags(a0)
+	
+.no
+	rts
+	
+	
+kn_stop::
+	cargs #4, .arg_song_slot.l
+	
+	lea song_slot_index_tbl,a0
+	move.l .arg_song_slot(sp),d0
+	lsl.l #1,d0
+	move.w (a0,d0),d0
+	
+	lea music_ram+k_song_slots,a0
+	lea (a0,d0),a0
+	
+	sf ss_flags(a0)
+	move.w #$ffff,ss_song_id(a0)
+	
+	rts
+	
+	
+	
+kn_sync::
+	lea music_ram+k_sync,a0
+	
+	moveq #0,d0
+	move.b (a0),d0
+	sf (a0)
+	
+	rts
+	
+	
+	
+	
+	
 	
 	
 	
