@@ -267,8 +267,6 @@ MAX_EFFECT = __SO - 1
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; Reset routine
 kn_reset::
-	cargs #(6+5+1)*4,.arg_music_base.l
-	
 	movem.l d2-d7/a2-a6,-(sp)
 	
 	;;;;; copy code over to z80
@@ -313,7 +311,7 @@ kn_reset::
 	
 	
 	;;;;;; clear music ram
-	movea.l .arg_music_base(sp),a6
+	lea music_ram,a6
 	movea.l a6,a5
 	
 	move.w #KN_VAR_SIZE/4 - 1, d7
@@ -347,11 +345,11 @@ kn_reset::
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; Init routine
 kn_init::
-	cargs #(6+5+1)*4, .arg_music_base.l, .arg_song_id.l, .arg_loop.l
+	cargs #(6+5+1)*4, .arg_song_slot.l, .arg_song_id.l
 	
 	movem.l d2-d7/a2-a6,-(sp)
 	
-	movea.l .arg_music_base(sp),a6
+	lea music_ram,a6
 	move.l .arg_song_id(sp),d0
 	
 	;;; get song base
@@ -361,8 +359,7 @@ kn_init::
 	
 	
 	;;; get song slot id
-	moveq #0,d0
-	move.b (a0)+,d0
+	move.l .arg_song_slot(sp),d0
 	
 	;;; get amount of tracks in song slot in d4
 	lea kn_song_slot_size_tbl,a1
@@ -383,8 +380,8 @@ kn_init::
 	
 	;;; set up song slot
 	move.b (a0)+,d0
-	tst.l .arg_loop(a7)
-	beq .noloop
+	tst.l .arg_song_id(a7)
+	bpl .noloop
 	bset #SS_FLG_LOOP,d0
 .noloop
 	move.b d0,ss_flags(a4)
@@ -397,7 +394,6 @@ kn_init::
 	move.b d0,ss_speed2(a4)
 	subq.b #1,d0
 	move.b d0,ss_speed_cnt(a4)
-	addq.l #1,a0
 	
 	move.w (a0)+,d0
 	lsl.w #2,d0
@@ -505,11 +501,9 @@ kn_init::
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; play routine
 kn_play::
-	cargs #(6+5+1)*4, .arg_music_base.l
-	
 	movem.l d2-d7/a2-a6,-(sp)
 	
-	movea.l .arg_music_base(sp),a6
+	lea music_ram,a6
 	
 	
 	

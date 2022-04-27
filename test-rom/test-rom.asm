@@ -298,20 +298,21 @@ mainloop:
 	
 	btst #4,d7 ;B inits music (no loop)
 	beq .noinitonce
-	pea 0
 	moveq #0,d0
 	move.b song_num,d0
 	move.l d0,-(sp)
+	pea 1
 	jsr kn_init
 	addq.l #8,sp
 .noinitonce
 	
 	btst #5,d7 ;C inits music (loop)
 	beq .noinit
-	pea 1
-	moveq #0,d0
+	moveq #1,d0
+	ror.l #1,d0
 	move.b song_num,d0
 	move.l d0,-(sp)
+	pea 1
 	jsr kn_init
 	addq.l #8,sp
 .noinit

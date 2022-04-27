@@ -2587,8 +2587,7 @@ int main(int argc, char *argv[])
 	{
 		song_t *s = &song_tbl[i];
 		
-		/*** TODO: make that 0 the song slot id */
-		fprintf(f,"kn_song_%u: db 0,$%02X,%u,%u,%u,0\n", i, s->flags, s->pattern_size, s->speed1,s->speed2);
+		fprintf(f,"kn_song_%u: db $%02X,%u,%u,%u\n", i, s->flags, s->pattern_size, s->speed1,s->speed2);
 		fprintf(f,
 			" dw %u\n"
 			" db %u,%u\n"
