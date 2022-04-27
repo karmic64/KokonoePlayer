@@ -25,7 +25,7 @@ KN_MODULES := ...
 
 include $(KN_DIR)Makefile
 ```
-Replace the `KN_DIR` value with the path to the root of the KokonoePlayer sources. Replace the `KN_SONG_SLOTS` value with the amount of song slots you wish to use. Replace the `KN_MODULES` value with the path to every module you wish to use.
+Replace the `KN_DIR` value with the path to the root of the KokonoePlayer sources, **with** a trailing slash. Replace the `KN_SONG_SLOTS` value with the amount of song slots you wish to use. Replace the `KN_MODULES` value with the path to every module you wish to use.
 
 If you are using C, find any rule that compiles individual source files into output files. Add the option `-I $(KN_DIR)`, allowing the compiler to locate the `kn.h` header file.
 
