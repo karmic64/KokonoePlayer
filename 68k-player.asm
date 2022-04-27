@@ -1,4 +1,4 @@
-	section kn
+	
 
 Z80 = $a00000
 Z80BUSREQ = $a11100
@@ -6,11 +6,10 @@ Z80RESET = $a11200
 
 PSG = $c00011
 	
-	
-
+	section .data,data
 	include "KN-COMPILED-MODULE.asm"
 
-
+	
 KN_CHANNELS = 14
 
 KN_SONG_SLOT_TRACKS = 13
@@ -177,6 +176,12 @@ KN_VAR_SIZE = __SO
 	public KN_VAR_SIZE
 	
 	
+	section .bss,bss
+	align 1
+music_ram:
+	dcb.b KN_VAR_SIZE
+	
+	
 	
 	; z80-side variables
 z80_base = Z80 + $1ff0
@@ -251,6 +256,7 @@ MAX_EFFECT = __SO - 1
 	;;	GCC expects the parameters to be pushed in REVERSE order, and then manually popped off once the subroutine exits.
 	;;	Registers d0-d1/a0-a1 are safe to clobber, all others must be saved.
 	;;	Any return value is returned in d0.
+	section .code,code
 	
 	
 	db "KokonoePlayer-68k v0.99 coded by karmic"
@@ -2944,6 +2950,7 @@ get_effected_pitch:
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; data
+	section .data,data
 	
 track_index_tbl:
 	rept KN_TRACKS

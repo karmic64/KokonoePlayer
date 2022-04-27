@@ -18,4 +18,4 @@ test-rom.elf: test-rom.asm font.rom exceptions.asm
 	$(KN_VASM) -Felf $(KN_VASMFLAGS) -o $@ $<
 
 test-rom.gen: link.ld test-rom.elf $(KN_OUT)
-	$(LD) -T link.ld --oformat binary -o $@ test-rom.elf $(KN_OUT)
+	$(LD) -M -T link.ld --oformat binary -o $@ test-rom.elf $(KN_OUT)

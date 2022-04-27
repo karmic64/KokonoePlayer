@@ -8,16 +8,16 @@ SECTIONS
 {
 	.header ORIGIN(rom) :
 	{
-		*(header)
+		*(.header)
 	} > rom
 	
 	.main ORIGIN(rom) + 0x200 :
 	{
-		*(CODE DATA kn)
+		*(.text .code .data)
 	} > rom
 	
 	.ram ORIGIN(ram):
 	{
-		*(BSS)
+		*(.bss)
 	} > ram
 }

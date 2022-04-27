@@ -106,7 +106,7 @@ SetVDPRegsA macro
 	
 	
 	
-	section header
+	section .header
 	
 	dl $ffff8000
 	dl reset
@@ -166,13 +166,13 @@ SetVDPRegsA macro
 	
 	
 	
-	code
+	section .code,code
 	
 	include "exceptions.asm"
 	
 	
 	pushsection
-	bss
+	section .bss,bss
 	
 rawjoy
 	dcb.b 1
@@ -181,10 +181,6 @@ joy
 	
 song_num
 	dcb.b 1
-	
-	
-	align 1
-music_ram
 	
 	popsection
 	
@@ -201,9 +197,7 @@ reset:
 .skiptmss
 	
 	
-	pea music_ram
 	jsr kn_reset
-	addq.l #4,sp
 	
 	
 	lea $a10000,a0
@@ -299,9 +293,7 @@ mainloop:
 	
 	btst #6,d7 ;A stops the music
 	beq .nostop
-	pea music_ram
 	jsr kn_reset
-	addq.l #4,sp
 .nostop
 	
 	btst #4,d7 ;B inits music (no loop)
@@ -310,10 +302,8 @@ mainloop:
 	moveq #0,d0
 	move.b song_num,d0
 	move.l d0,-(sp)
-	pea music_ram
 	jsr kn_init
 	addq.l #8,sp
-	addq.l #4,sp
 .noinitonce
 	
 	btst #5,d7 ;C inits music (loop)
@@ -322,10 +312,8 @@ mainloop:
 	moveq #0,d0
 	move.b song_num,d0
 	move.l d0,-(sp)
-	pea music_ram
 	jsr kn_init
 	addq.l #8,sp
-	addq.l #4,sp
 .noinit
 	
 	
@@ -335,9 +323,7 @@ mainloop:
 	SetVDPAddr 0,CRAM_WRITE
 	move.w #$ffff,VDPDATA
 	
-	pea music_ram
 	jsr kn_play
-	addq.l #4,sp
 	
 	SetVDPAddr 0,CRAM_WRITE
 	move.w #0,VDPDATA
