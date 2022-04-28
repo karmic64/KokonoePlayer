@@ -188,8 +188,8 @@ enum {
 	CHN_PSG_N,
 };
 
-/* deflemask's max is 0x7f, furnace's max is 0x7e */
-#define MAX_ORDERS 0x7f
+/* deflemask's max is 0x7f, furnace's max is 0x7e (0xff since dev80) */
+#define MAX_ORDERS 0xff
 
 
 const uint8_t channel_arrangement_std[] = {
