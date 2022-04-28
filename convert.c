@@ -188,7 +188,7 @@ enum {
 	CHN_PSG_N,
 };
 
-/* deflemask's max is 0x7f, furnace's max is 0x7e (0xff since dev80) */
+/* deflemask's max is 0x7f, furnace's max is 0x7e (256 since dev80, but due to limitations at the moment we use 0xff) */
 #define MAX_ORDERS 0xff
 
 

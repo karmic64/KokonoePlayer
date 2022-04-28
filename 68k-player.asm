@@ -550,7 +550,9 @@ kn_play::
 	move.b d5,d2 ;save the old order
 	
 	move.b ss_patt_break(a4),d0
-	bmi .no_patt_break
+	st d1
+	cmp.b d0,d1
+	beq .no_patt_break
 	st ss_patt_break(a4)
 	moveq #0,d4 ;back to row 0
 	move.b d0,d5 ;set order
