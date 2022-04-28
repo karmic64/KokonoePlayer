@@ -13,7 +13,7 @@ SECTIONS
 	
 	.main ORIGIN(rom) + 0x200 :
 	{
-		*(.text .code .data)
+		*(.text .code .rodata)
 	} > rom
 	
 	.ram ORIGIN(ram):

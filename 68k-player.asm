@@ -6,7 +6,7 @@ Z80RESET = $a11200
 
 PSG = $c00011
 	
-	section .data,data
+	section .rodata,data
 	include "KN-COMPILED-MODULE.asm"
 
 	
@@ -3068,7 +3068,7 @@ kn_sync::
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; data
-	section .data,data
+	section .rodata,data
 	
 track_index_tbl:
 	rept KN_TRACKS
