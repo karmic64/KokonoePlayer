@@ -143,6 +143,7 @@ At the time of writing, the latest Furnace module version was 83. If the people 
 
 The following effects are not supported:
 * `7xy`, tremolo
+* `Dxx`, pattern skip, where `xx` is nonzero
 * `EFxx`, "global fine tune"
 
 Only the following Furnace compatibility flags are supported:
