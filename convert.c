@@ -2587,11 +2587,13 @@ int main(int argc, char *argv[])
 	{
 		song_t *s = &song_tbl[i];
 		
-		fprintf(f,"kn_song_%u: db $%02X,%u,%u,%u\n", i, s->flags, s->pattern_size, s->speed1,s->speed2);
+		fprintf(f,"kn_song_%u: db $%02X,%u,%u,0\n", i, s->flags, s->speed1,s->speed2);
 		fprintf(f,
+			" dw %u\n"
 			" dw %u\n"
 			" db %u,%u\n"
 			" db "
+				, s->pattern_size
 				, s->sample_map
 				, s->orders,s->channels);
 		for (unsigned j = 0; j < s->channels; j++)

@@ -139,12 +139,12 @@ ss_order so.b 1
 ss_patt_break so.b 1 ;$ff - no skip
 ss_song_size so.b 1
 
-ss_row so.b 1
-ss_patt_size so.b 1
-
 ss_speed_cnt so.b 1
 ss_speed1 so.b 1
 ss_speed2 so.b 1
+
+ss_row so.w 1
+ss_patt_size so.w 1
 
 ss_sample_map so.l 1
 
@@ -401,13 +401,13 @@ kn_init::
 	
 	move.w d1,ss_song_id(a4)
 	
-	move.b (a0)+,ss_patt_size(a4)
-	
 	move.b (a0)+,ss_speed1(a4)
 	move.b (a0)+,d0
 	move.b d0,ss_speed2(a4)
 	subq.b #1,d0
 	move.b d0,ss_speed_cnt(a4)
+	addq.l #1,a0
+	move.w (a0)+,ss_patt_size(a4)
 	
 	move.w (a0)+,d0
 	lsl.w #2,d0
@@ -420,6 +420,7 @@ kn_init::
 	
 	clr.b ss_order(a4)
 	st ss_row(a4)
+	st ss_row+1(a4)
 	st ss_patt_break(a4)
 	
 	
@@ -533,14 +534,14 @@ kn_play::
 	beq .next_song_slot
 	
 	move.b ss_order(a4),d5
-	move.b ss_row(a4),d4
+	move.w ss_row(a4),d4
 	move.b ss_speed_cnt(a4),d3
 	
 	
 	;is the row over?
 	moveq #0,d0
-	move.b d4,d0
-	andi.b #1,d0
+	move.w d4,d0
+	andi.w #1,d0
 	addq.b #1,d3
 	cmp.b ss_speed1(a4,d0),d3
 	bne .song_slot_set_speed
@@ -560,8 +561,8 @@ kn_play::
 	
 .no_patt_break
 	;is the pattern over?
-	addq.b #1,d4
-	cmp.b ss_patt_size(a4),d4
+	addq.w #1,d4
+	cmp.w ss_patt_size(a4),d4
 	bne .song_slot_set_row
 	moveq #0,d4
 	
@@ -629,7 +630,7 @@ kn_play::
 .song_slot_set_order
 	move.b d5,ss_order(a4)
 .song_slot_set_row
-	move.b d4,ss_row(a4)
+	move.w d4,ss_row(a4)
 .song_slot_set_speed
 	move.b d3,ss_speed_cnt(a4)
 	
