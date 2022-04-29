@@ -229,7 +229,7 @@ EFF_FINETUNE so.b 1
 EFF_LEGATO so.b 1
 EFF_SMPLBANK so.b 1
 EFF_CUT so.b 1
-EFF_SYNC so.b 1 ;TODO: write sync access routine
+EFF_SYNC so.b 1
 
 EFF_LFO so.b 1
 EFF_FB so.b 1
@@ -610,7 +610,7 @@ kn_play::
 	;this is kind of a lame solution, but actually saving all the song state
 	;would waste a lot of RAM.
 	;this is enough for at least decent compatibility
-	bset.b #T_FLG_KEYOFF,t_flags(a5)
+	bset.b #T_FLG_CUT,t_flags(a5)
 	clr.w t_slide(a5)
 	clr.b t_vol_slide(a5)
 	
