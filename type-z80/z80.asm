@@ -659,14 +659,15 @@ kn_init:
 	push hl
 	
 	;if the amount of channels is odd, realign the chn.arr. step count
-	bit 0,a
-	jr z,+
-	inc a
+	ld e,a
+	ld d,0
+	
+	rrca
+	jr nc,+
+	inc e
 +:	
 	
 	;step to sequence
-	ld e,a
-	ld d,0
 	call step_ptr
 	ld (k_temp+2),hl
 	ld a,c
