@@ -8,7 +8,6 @@ endif
 ifndef KN_TYPE
 $(warning KN_TYPE not defined. Defaulting to 68k.)
 KN_TYPE := 68k
-KN_TYPE_DIR := $(KN_DIR)type-$(KN_TYPE)/
 endif
 ifndef KN_SONG_SLOTS
 $(warning KN_SONG_SLOTS not defined. Defaulting to 1.)
@@ -17,6 +16,8 @@ endif
 ifndef KN_MODULES
 $(error KN_MODULES not defined)
 endif
+
+KN_TYPE_DIR := $(KN_DIR)type-$(KN_TYPE)/
 
 
 ### build tools
