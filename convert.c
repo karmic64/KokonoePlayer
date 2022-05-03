@@ -2428,14 +2428,31 @@ read_module_cleanup:
 
 int main(int argc, char *argv[])
 {
-	if (argc < 3)
+	if (argc < 5)
 	{
 		puts(
 			"DefleMask/Furnace module converter written by karmic\n"
 			"\n"
 			"Usage:\n"
-			"  convert outfile modulenames..."
+			"  convert type outfile constantsfile modulenames..."
 		);
+		return EXIT_FAILURE;
+	}
+	
+	enum {
+		TYPE_68K,
+		TYPE_Z80
+	};
+	
+	int type;
+	const char *typestr = argv[1];
+	const char *outfilename = argv[2];
+	const char *constfilename = argv[3];
+	if (!strcasecmp(typestr,"68k")) type = TYPE_68K;
+	else if (!strcasecmp(typestr,"z80")) type = TYPE_Z80;
+	else
+	{
+		printf("Bad type name %s\n",typestr);
 		return EXIT_FAILURE;
 	}
 	
@@ -2446,7 +2463,7 @@ int main(int argc, char *argv[])
 		instrument_histogram[i].count = 0;
 	}
 	
-	for (int i = 2; i < argc; i++)
+	for (int i = 4; i < argc; i++)
 		read_module(argv[i]);
 	
 	if (!songs)
@@ -2547,10 +2564,16 @@ int main(int argc, char *argv[])
 	time_t outtime;
 	time(&outtime);
 	puts("\nWriting output data...");
-	FILE *f = fopen(argv[1], "w");
+	FILE *f = fopen(outfilename, "w");
 	if (!f)
 	{
-		printf("Can't open %s for writing: %s\n",argv[1],strerror(errno));
+		printf("Can't open %s for writing: %s\n",outfilename,strerror(errno));
+		return EXIT_FAILURE;
+	}
+	FILE *constf = fopen(constfilename, "w");
+	if (!constf)
+	{
+		printf("Can't open %s for writing: %s\n",constfilename,strerror(errno));
 		return EXIT_FAILURE;
 	}
 	
@@ -2759,7 +2782,15 @@ int main(int argc, char *argv[])
 		if (ins->type != INSTR_TYPE_PSG) fprintf(f," dw %u\n", ins->extra_id);
 		if (ins->macros > macro_slots) macro_slots = ins->macros;
 	}
-	fprintf(f,"MACRO_SLOTS = %u\n", macro_slots);
+	switch (type)
+	{
+		case TYPE_68K:
+			fprintf(constf,"MACRO_SLOTS = %u\n", macro_slots);
+			break;
+		case TYPE_Z80:
+			fprintf(constf,".define MACRO_SLOTS %u\n", macro_slots);
+			break;
+	}
 	fputc('\n', f);
 	
 	/* macros */
@@ -2890,6 +2921,7 @@ int main(int argc, char *argv[])
 	
 	
 	fclose(f);
+	fclose(constf);
 	puts("Success.");
 	
 	return EXIT_SUCCESS;

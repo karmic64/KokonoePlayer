@@ -33,7 +33,7 @@ kn-type-clean:
 
 
 
-$(KN_OUT_Z80): $(KN_Z80)
+$(KN_OUT_Z80): $(KN_Z80) $(KN_OUT_MODULE_CONSTANTS)
 	$(KN_WLAZ80) $(KN_WLAZ80FLAGS) -o $@ $<
 
 # wlalink doesn't support include paths, so dynamically generate link file
@@ -42,7 +42,7 @@ $(KN_OUT_Z80_LN): $(KN_OUT_Z80)
 		echo $(KN_OUT_Z80) >> $(KN_Z80_LN) && \
 		$(KN_WLALINK) $(KN_WLALINKFLAGS) $(KN_Z80_LN) $@
 
-$(KN_OUT_68K): $(KN_68K) $(KN_OUT_Z80_LN) $(KN_OUT_COMPILED_MODULE) $(KN_OUT_MODULE_CONSTANTS) $(KN_OUT_GENERATED_DATA)
+$(KN_OUT_68K): $(KN_68K) $(KN_OUT_Z80_LN) $(KN_OUT_COMPILED_MODULE) $(KN_OUT_GENERATED_DATA)
 	$(KN_VASM) -Felf $(KN_VASMFLAGS) -o $@ $<
 
 

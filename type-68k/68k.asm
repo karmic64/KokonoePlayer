@@ -6,8 +6,7 @@ Z80RESET = $a11200
 
 PSG = $c00011
 	
-	section .rodata,data
-	include "KN-COMPILED-MODULE.asm"
+	include "KN-MODULE-CONSTANTS.asm"
 
 	
 KN_CHANNELS = 14
@@ -3115,4 +3114,8 @@ fm_fnum_tbl:
 z80_blob:
 	incbin "z80.bin"
 z80_blob_end:
+
+
+
+	include "KN-COMPILED-MODULE.asm"
 
