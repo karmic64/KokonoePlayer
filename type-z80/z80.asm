@@ -61,7 +61,7 @@ fm_size .db
 
 
 	;;; track
-.enum 7 desc
+.enum 8 desc
 T_FLG_ON db
 T_FLG_CUT db
 T_FLG_KEYOFF db
@@ -179,8 +179,17 @@ ss_size .db
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; private variables
 .enum $0c00 ;this may need to be increased in the future
 
+
+k_temp dsb $10 ;general-purpose temporary storage
+k_cur_track db
+k_cur_track_ptr dw
+k_cur_song_slot db
+k_cur_song_slot_ptr dw
+
+
+
 k_song_slots dsb ss_size*KN_SONG_SLOTS
-k_tracks dsb t_size*KN_TRACKS
+k_tracks_real dsb t_size*KN_TRACKS
 
 
 k_chn_track dsb KN_CHANNELS
@@ -195,6 +204,8 @@ k_fm_lfo dsb 1
 
 .ende
 
+
+.define k_tracks k_tracks_real+$80
 
 
 
@@ -293,7 +304,7 @@ vib_scale_tbl_base dsb 3
 	
 	;read byte from banked pointer chl into a then step pointer
 	.orga 8
-getbyte:
+get_byte:
 	ld a,(hl)
 	inc l
 	ret nz
@@ -303,7 +314,7 @@ getbyte:
 	inc c
 	;now we are at $10, another good rst location
 	;sets bank to c
-setbank:
+set_bank:
 	push af
 	push hl
 	ld hl,BANK
@@ -417,6 +428,10 @@ reset:
 	
 	
 	
+	ld a,0
+	ld de,0
+	call kn_init
+	
 	
 	
 -:
@@ -426,10 +441,8 @@ reset:
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;; misc routines
 	
-stepswapptr:
-	ex de,hl
 	;add de to banked pointer chl, then set the bank
-stepptr:
+step_ptr:
 	add hl,de
 	jr nc,+
 	inc c
@@ -438,7 +451,7 @@ stepptr:
 	jr nc,+
 	inc c
 	set 7,h
-+:	jp setbank
++:	jp set_bank
 	
 	
 	
@@ -481,14 +494,309 @@ muls:
 	
 	
 	
-	;convert 68k pointer bdl to banked pointer chl, then set the bank
-ptrconv:
-	ld h,d
-	sla d
+	;read 68k pointer indirect from (banked ahl)+(de*4)+1
+indexed_read_68k_ptr:
+	ld c,a
+	ex de,hl
+	add hl,hl
+	add hl,hl
+	inc hl
+	ex de,hl
+	call step_ptr
+	
+	;read 68k pointer from banked pointer chl, convert into chl, then set bank
+read_68k_ptr:
+	rst get_byte
+	ld b,a
+	rst get_byte
+	ld d,a
+	rst get_byte
+	ld l,a
+	ld a,d
+	rlca
 	rl b
-	set 7,h
+	set 7,d
+	ld h,d
 	ld c,b
-	jp setbank
+	jp set_bank
+	
+	
+	
+	
+	;id in a
+set_track:
+	ld (k_cur_track),a
+	ld de,track_ptr_tbl
+load_track_from_table:
+	add a,a
+	ld l,a
+	ld h,0
+	add hl,de
+	ld a,(hl)
+	ld ixl,a
+	inc hl
+	ld a,(hl)
+	ld ixh,a
+	ld (k_cur_track_ptr),ix
+	ret
+	
+	
+	;id in a
+set_song_slot:
+	ld (k_cur_song_slot),a
+	ld de,song_slot_ptr_tbl
+load_song_slot_from_table:
+	add a,a
+	ld l,a
+	ld h,0
+	add hl,de
+	ld a,(hl)
+	ld iyl,a
+	inc hl
+	ld a,(hl)
+	ld iyh,a
+	ld (k_cur_song_slot_ptr),iy
+	ret
+	
+	
+	
+	
+	;id in variable
+get_track_song_slot:
+	ld a,(k_cur_track)
+	ld de,kn_track_song_slot_ptr_tbl
+	jr load_song_slot_from_table
+	
+	
+	;id in variable
+get_song_slot_track:
+	ld a,(k_cur_song_slot)
+	ld de,kn_song_slot_track_ptr_tbl
+	jr load_track_from_table
+	
+	
+	
+	
+	
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; init routine
+	; song slot in a, song id in de (loop flag in bit 15)
+kn_init:
+	;;;; get track and song slot
+	exx
+	call set_song_slot
+	call get_song_slot_track
+	exx
+	
+	;;;; set song id in slot
+	push de
+	res 7,d
+	ld (iy+ss_song_id),e
+	ld (iy+ss_song_id+1),d
+	
+	;;;; get song base
+	ld hl,(song_tbl_base)
+	ld a,(song_tbl_base+2)
+	call indexed_read_68k_ptr
+	
+	;;;; setup song slot
+	rst get_byte ;flags
+	pop de
+	bit 7,d
+	jr z,+
+	set SS_FLG_LOOP,a
++:	ld (iy+ss_flags),a
+	
+	rst get_byte ;speeds
+	ld (iy+ss_speed1),a
+	rst get_byte
+	ld (iy+ss_speed2),a
+	dec a
+	ld (iy+ss_speed_cnt),a
+	
+	rst get_byte ;pattern size
+	rst get_byte
+	ld (iy+ss_patt_size+1),a
+	rst get_byte
+	ld (iy+ss_patt_size),a
+	
+	rst get_byte ;sample map
+	ld d,a
+	rst get_byte
+	ld e,a
+	push bc
+	push hl
+	ld hl,(sample_map_tbl_base)
+	ld a,(sample_map_tbl_base+2)
+	call indexed_read_68k_ptr
+	ld (iy+ss_sample_map),l
+	ld (iy+ss_sample_map+1),h
+	ld (iy+ss_sample_map+2),c
+	pop hl
+	pop bc
+	rst set_bank
+	
+	rst get_byte ;song size
+	ld (iy+ss_song_size),a
+	
+	ld (iy+ss_order),0 ;misc init
+	ld a,$ff
+	ld (iy+ss_volume),a
+	ld (iy+ss_row),a
+	ld (iy+ss_row+1),a
+	ld (iy+ss_patt_break),a
+	
+	
+	;;;; set up tracks
+	rst get_byte ;channel count
+	push af
+	ld (k_temp),a
+	
+	;get the start address of the sequence (currently we point to the channel arrangement)
+	push bc
+	push hl
+	
+	;if the amount of channels is odd, realign the chn.arr. step count
+	bit 0,a
+	jr z,+
+	inc a
++:	
+	
+	;step to sequence
+	ld e,a
+	ld d,0
+	call step_ptr
+	ld (k_temp+2),hl
+	ld a,c
+	ld (k_temp+4),a
+	
+	;get sequence size (song size * 4)
+	ld l,(iy+ss_song_size)
+	ld h,0
+	add hl,hl
+	add hl,hl
+	ld (k_temp+5),hl
+	
+	pop hl ;get pointer to channel arrangement back
+	pop bc
+	rst set_bank
+	
+	
+	;;; main track init loop
+@track_init_loop:
+
+	;; first, clear variables
+	ld d,ixh
+	ld e,ixl
+	ld b,t_size
+	ex de,hl
+-:	ld (hl),0
+	inc hl
+	djnz -
+	ex de,hl
+	
+	
+	;; init pattern player
+	ld (ix+t_flags), (1 << T_FLG_ON) | (1 << T_FLG_CUT) | (1 << T_FLG_KEYOFF) | (1 << T_FLG_FM_UPDATE)
+	rst get_byte
+	ld (ix+t_chn),a
+	
+	push bc ;get sequence base
+	push hl
+	ld hl,(k_temp+2)
+	ld a,(k_temp+4)
+	ld (ix+t_seq_base),l
+	ld (ix+t_seq_base+1),h
+	ld (ix+t_seq_base+2),a
+	ex de,hl ;now step
+	ld hl,(k_temp+5)
+	ex de,hl
+	call step_ptr
+	ld (k_temp+2),hl
+	ld a,c
+	ld (k_temp+4),a
+	pop hl
+	pop bc
+	rst set_bank
+	
+	ld (ix+t_dur_cnt),1
+	
+	;; init instruments/effects
+	ld a,$ff
+	ld (ix+t_instr),a
+	ld (ix+t_instr+1),a
+	ld (ix+t_slide_target),a
+	ld (ix+t_pan),$c0
+	ld (ix+t_arp_speed),1
+	ld (ix+t_vib_fine),$0f
+	
+	ld (ix+t_psg_noise),3
+	
+	;initialize fm patch to TL $7f/RR $f/ D1L $f
+	;this is to avoid any init noise
+	ld (ix+t_fm+fm_40),a
+	ld (ix+t_fm+fm_40+1),a
+	ld (ix+t_fm+fm_40+2),a
+	ld (ix+t_fm+fm_40+3),a
+	ld (ix+t_fm+fm_80),a
+	ld (ix+t_fm+fm_80+1),a
+	ld (ix+t_fm+fm_80+2),a
+	ld (ix+t_fm+fm_80+3),a
+	
+	;depending on channel type, init volume
+	ld b,$7f
+	ld a,(ix+t_chn)
+	cp 6+4
+	jr c,+
+	ld b,$0f
++:	ld (ix+t_vol),b
+	
+	
+	
+	;; next
+	ld de,t_size
+	add ix,de
+	
+	ld a,(k_temp)
+	dec a
+	ld (k_temp),a
+	jp nz,@track_init_loop
+	
+	
+	
+	
+	
+	
+	;;;; turn off any unused tracks
+	pop bc ;pop channel count back off (in b)
+	ld a,KN_SONG_SLOT_TRACKS
+	sub b
+	ret z
+	
+	ld de,t_size
+	ld b,a
+-:	ld (ix+t_flags),0
+	add ix,de
+	djnz -
+	
+	
+	ret
+	
+	
+	
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; play routine
+	
+kn_play:
+	ret
+	
+	
+	
+	
 	
 	
 	
