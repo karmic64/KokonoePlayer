@@ -434,7 +434,9 @@ muls:
   sbc hl,de
 @mulbpos:
 
-  .rept 16
+  ld a,16
+  
+@loop:
   add hl,hl
   rl e
   rl d
@@ -443,7 +445,8 @@ muls:
   jr nc,+
   inc de
 +:
-  .endr
+  dec a
+  jr nz,@loop
   
   ret
 	

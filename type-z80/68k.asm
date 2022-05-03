@@ -3,17 +3,6 @@
 Z80 = $a00000
 Z80BUSREQ = $a11100
 Z80RESET = $a11200
-	
-	section .rodata,data
-	include "KN-COMPILED-MODULE.asm"
-	
-	include "KN-GENERATED-DATA.asm"
-	
-	
-z80_blob:
-	incbin "z80.bin"
-z80_blob_end:
-
 
 
 
@@ -124,6 +113,16 @@ kn_sync::
 	
 	
 	
+	
+	section .rodata,data
+	include "KN-COMPILED-MODULE.asm"
+	
+	include "KN-GENERATED-DATA.asm"
+	
+	
+z80_blob:
+	incbin "z80.bin"
+z80_blob_end:
 	
 	
 	
