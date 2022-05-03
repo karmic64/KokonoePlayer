@@ -175,6 +175,32 @@ ss_size .db
 
 
 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; private variables
+.enum $0c00 ;this may need to be increased in the future
+
+k_song_slots dsb ss_size*KN_SONG_SLOTS
+k_tracks dsb t_size*KN_TRACKS
+
+
+k_chn_track dsb KN_CHANNELS
+
+k_prv_fm_track dsb 10
+
+k_psg_prv_noise dsb 1
+
+k_fm_prv_chn3_keyon dsb 1
+k_fm_extd_chn3 dsb 1
+k_fm_lfo dsb 1
+
+.ende
+
+
+
+
+
+
+
 ;;;;;;;;;;;;;;; effect enum
 .enum $c0
 EFF_PORTAUP db
@@ -400,7 +426,9 @@ reset:
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;; misc routines
 	
-	;add de to banked pointer chl
+stepswapptr:
+	ex de,hl
+	;add de to banked pointer chl, then set the bank
 stepptr:
 	add hl,de
 	jr nc,+
@@ -453,38 +481,69 @@ muls:
 	
 	
 	
-	;convert 68k pointer bdl to banked pointer chl
+	;convert 68k pointer bdl to banked pointer chl, then set the bank
 ptrconv:
 	ld h,d
 	sla d
 	rl b
 	set 7,h
 	ld c,b
-	ret
+	jp setbank
 	
 	
 	
 	
 	
 	
-	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; private variables
-.enum $0c00 ;this may need to be increased in the future
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; data
+	
+track_ptr_tbl:
+	.redefine idx 0
+	.rept KN_TRACKS
+		.dw t_size*idx + k_tracks
+		.redefine idx idx+1
+	.endr
+	
+song_slot_ptr_tbl:
+	.redefine idx 0
+	.rept KN_SONG_SLOTS
+		.dw ss_size*idx + k_song_slots
+		.redefine idx idx+1
+	.endr
+	
+	
 
-k_song_slots dsb ss_size*KN_SONG_SLOTS
-k_tracks dsb t_size*KN_TRACKS
+kn_track_song_slot_ptr_tbl:
+	.redefine idx 0
+	.rept KN_SONG_SLOTS
+		.dsw KN_SONG_SLOT_TRACKS, ss_size*idx + k_song_slots
+		.redefine idx idx+1
+	.endr
 
-
-k_chn_track dsb KN_CHANNELS
-
-k_prv_fm_track dsb 10
-
-k_psg_prv_noise dsb 1
-
-k_fm_prv_chn3_keyon dsb 1
-k_fm_extd_chn3 dsb 1
-k_fm_lfo dsb 1
-
-.ende
+kn_song_slot_track_ptr_tbl:
+	.redefine idx 0
+	.rept KN_SONG_SLOTS
+		.dw t_size*idx*KN_SONG_SLOT_TRACKS + k_tracks
+		.redefine idx idx+1
+	.endr
+	
+kn_song_slot_size_tbl:
+	.dsb KN_SONG_SLOTS,KN_SONG_SLOT_TRACKS
+	
+	
+	
+	
+fm_chn3_freq_reg_tbl:
+	.db $ad,$ac,$ae,$a6
+	
+.define C_FNUM 644
+fm_fnum_tbl:
+	.dw 644,681,722,765,810,858,910,964,1021,1081,1146,1214
+	
+	
+	
+	
 	
 	
 	
