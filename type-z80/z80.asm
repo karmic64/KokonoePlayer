@@ -721,29 +721,28 @@ kn_init:
 	pop bc
 	rst set_bank
 	
-	ld (ix+t_dur_cnt),1
+	inc (ix+t_dur_cnt)
 	
 	;; init instruments/effects
-	ld a,$ff
-	ld (ix+t_instr),a
-	ld (ix+t_instr+1),a
-	ld (ix+t_slide_target),a
+	dec (ix+t_instr)
+	dec (ix+t_instr+1)
+	dec (ix+t_slide_target)
 	ld (ix+t_pan),$c0
-	ld (ix+t_arp_speed),1
+	inc (ix+t_arp_speed)
 	ld (ix+t_vib_fine),$0f
 	
 	ld (ix+t_psg_noise),3
 	
 	;initialize fm patch to TL $7f/RR $f/ D1L $f
 	;this is to avoid any init noise
-	ld (ix+t_fm+fm_40),a
-	ld (ix+t_fm+fm_40+1),a
-	ld (ix+t_fm+fm_40+2),a
-	ld (ix+t_fm+fm_40+3),a
-	ld (ix+t_fm+fm_80),a
-	ld (ix+t_fm+fm_80+1),a
-	ld (ix+t_fm+fm_80+2),a
-	ld (ix+t_fm+fm_80+3),a
+	dec (ix+t_fm+fm_40)
+	dec (ix+t_fm+fm_40+1)
+	dec (ix+t_fm+fm_40+2)
+	dec (ix+t_fm+fm_40+3)
+	dec (ix+t_fm+fm_80)
+	dec (ix+t_fm+fm_80+1)
+	dec (ix+t_fm+fm_80+2)
+	dec (ix+t_fm+fm_80+3)
 	
 	;depending on channel type, init volume
 	ld b,$7f
