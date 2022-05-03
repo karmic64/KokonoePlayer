@@ -7,6 +7,7 @@ Unlike practically all existing Genesis sound drivers out there, this is not jus
 ## Prerequisites
 
 To use KokonoePlayer, you need the following:
+
 * `make`, and a Makefile that builds your project. Other build systems are unsupported.
 * A **native** C compiler (preferably `gcc`), to compile the module converter and data generator.
 * [vasm](http://sun.hasenbraten.de/vasm/), to assemble the 68000 part. When running `make`, use `SYNTAX=mot CPU=m68k`. The output executable should be named `vasmm68k_mot`.
@@ -20,12 +21,13 @@ This section assumes you are using `make` to build your project.
 First off, add the following to the top of your `Makefile`:
 ```make
 KN_DIR := ...
+KN_TYPE := ...
 KN_SONG_SLOTS := ...
 KN_MODULES := ...
 
 include $(KN_DIR)Makefile
 ```
-Replace the `KN_DIR` value with the path to the root of the KokonoePlayer sources, **with** a trailing slash. Replace the `KN_SONG_SLOTS` value with the amount of song slots you wish to use. Replace the `KN_MODULES` value with the path to every module you wish to use.
+Replace the `KN_DIR` value with the path to the root of the KokonoePlayer sources, **with** a trailing slash. Replace the `KN_TYPE` value with either `68k` or `z80`. Replace the `KN_SONG_SLOTS` value with the amount of song slots you wish to use. Replace the `KN_MODULES` value with the path to every module you wish to use.
 
 If you are using C, find any rule that compiles individual source files into output files. Add the option `-I $(KN_DIR)`, allowing the compiler to locate the `kn.h` header file.
 
@@ -142,11 +144,13 @@ Old (and possibly new) DefleMask modules ARE NOT supported. If the conversion of
 At the time of writing, the latest Furnace module version was 83. If the people responsible ever introduce any breaking changes, please contact me.
 
 The following effects are not supported:
+
 * `7xy`, tremolo
 * `Dxx`, pattern skip, where `xx` is nonzero
 * `EFxx`, "global fine tune"
 
 Only the following Furnace compatibility flags are supported:
+
 * Register/linear pitch mode
 * Continuous vibrato mode
 * Protracker-style slides
