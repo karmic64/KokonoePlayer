@@ -305,8 +305,9 @@ vib_scale_tbl_base dsb 3
 	;reset stub
 	.orga 0
 	di
+	im 1
 	ld sp,STACK_POINTER
-	jp reset
+	jr reset
 	
 	
 	;read byte from banked pointer chl into a then step pointer
@@ -408,7 +409,6 @@ reset:
 	ld (k_fm_lfo),a
 	
 	
-	im 1
 	ei
 	
 	
@@ -887,6 +887,150 @@ kn_init:
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; play routine
 	
 kn_play:
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; handle song slots
+	ld a,KN_SONG_SLOTS-1
+	ld iy,k_song_slots + (ss_size*(KN_SONG_SLOTS-1))
+@song_slot_loop:
+	ld (k_cur_song_slot),a
+	
+	bit SS_FLG_ON,(iy+ss_flags)
+	jp z,@@next_song_slot
+	
+	;;is the row over?
+	
+	;get row speed in (hl)
+	ld d,iyh
+	ld e,iyl
+	ld hl,ss_speed1
+	add hl,de
+	bit 0,(iy+ss_row)
+	jr z,+
+	inc hl
++:	;if speedcnt+=1 >= speed, row is over
+	ld a,(iy+ss_speed_cnt)
+	inc a
+	cp (hl)
+	jp c,@@no_next_row
+	ld (iy+ss_speed_cnt),0
+	
+	
+	;; row is over, check for a pattern break
+	ld a,(iy+ss_patt_break)
+	cp $ff
+	jr z,@@no_patt_break
+	
+	ld (iy+ss_patt_break),$ff
+	jr @@song_set_order
+	
+@@no_patt_break:
+	;; no pattern break, check for the end of the pattern
+	;; when row+=1 >= patt size
+	ld l,(iy+ss_row)
+	ld h,(iy+ss_row+1)
+	inc hl
+	ld a,l
+	cp (iy+ss_patt_size)
+	ld a,h
+	sbc (iy+ss_patt_size+1)
+	jr c,@@no_next_pattern
+	
+	ld a,(iy+ss_order)
+	inc a
+	cp (iy+ss_song_size) ;song over?
+	jr c,@@song_set_order
+	xor a
+	
+@@song_set_order:
+	;right now the new order number is in A
+	ld (iy+ss_row),0
+	ld (iy+ss_row+1),0
+	
+	;put the result of comparing old order - new order in the upper bit of c
+	ld c,a
+	ld a,(iy+ss_order)
+	cp c
+	ld (iy+ss_order),c ;then save it
+	rr c
+	
+	
+	;;prepare all tracks for the next pattern
+	call get_song_slot_track
+	ld b,KN_SONG_SLOT_TRACKS
+@@track_reset_loop:
+	bit T_FLG_ON,(ix+t_flags)
+	jr z,@@next_track_reset
+	
+	;on z80, the pattern reader itself resets the pattern index
+	ld (ix+t_dur_cnt),1
+	
+	;we need to do loop detection.
+	;a loop is defined when the new order <= old order
+	;this bit is set when there is a carry from old order - new order
+	;or, if old order < new order
+	bit 7,c
+	jr nz,@@next_track_reset ;old < new, this is not a loop
+	
+	;if we should not loop, stop the entire song
+	bit SS_FLG_LOOP,(iy+ss_flags)
+	jr nz,@@yes_loop
+	xor a
+	ld (iy+ss_flags),a
+	dec a
+	ld (iy+ss_song_id),a
+	ld (iy+ss_song_id+1),a
+	jr @@next_song_slot
+	
+	
+@@yes_loop:
+	;dumb way to not have to save the song state on loop
+	set T_FLG_CUT,(ix+t_flags)
+	xor a
+	ld (ix+t_slide),a
+	ld (ix+t_slide+1),a
+	ld (ix+t_vol_slide),a
+	
+	ld d,$7f
+	ld a,(ix+t_chn)
+	cp 6+4
+	jr c,+
+	ld d,$0f
++:	ld (ix+t_vol),d
+	
+	
+	
+@@next_track_reset:
+	ld de,t_size
+	add ix,de
+	djnz @@track_reset_loop
+	
+	
+	
+	
+	jr @@next_song_slot
+	
+	
+@@no_next_pattern:
+	ld (iy+ss_row),l
+	ld (iy+ss_row+1),h
+	jr @@next_song_slot
+	
+@@no_next_row:
+	ld (iy+ss_speed_cnt),a
+	
+@@next_song_slot:
+	ld de,-ss_size
+	add iy,de
+	
+	ld a,(k_cur_song_slot)
+	dec a
+	jp p,@song_slot_loop
+	
+	
+	
+	
+	
 	ret
 	
 	
