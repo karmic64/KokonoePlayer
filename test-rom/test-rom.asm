@@ -301,7 +301,7 @@ mainloop:
 	moveq #0,d0
 	move.b song_num,d0
 	move.l d0,-(sp)
-	pea 1
+	pea 0
 	jsr kn_init
 	addq.l #8,sp
 .noinitonce
@@ -312,7 +312,7 @@ mainloop:
 	ror.l #1,d0
 	move.b song_num,d0
 	move.l d0,-(sp)
-	pea 1
+	pea 0
 	jsr kn_init
 	addq.l #8,sp
 .noinit

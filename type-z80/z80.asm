@@ -187,6 +187,13 @@ k_cur_song_slot db
 k_cur_song_slot_ptr dw
 
 
+k_frame_cnt db
+k_cur_frame db
+
+
+k_comm_index db
+
+
 
 k_song_slots dsb ss_size*KN_SONG_SLOTS
 k_tracks_real dsb t_size*KN_TRACKS
@@ -344,40 +351,18 @@ set_bank:
 	;;;;;;;;;;;;;;;;;;;;;; irq
 	.orga $38
 	push af
-	push bc
-	push de
 	push hl
 	
-	ex af,af'
-	exx
-	push af
-	push bc
-	push de
-	push hl
-	
-	push ix
-	push iy
-	;;;;;;;;;;;;;
-	
-	
-	ld hl,$1fff
+	ld hl,k_frame_cnt
 	inc (hl)
 	
-	
-	;;;;;;;;;;;;
-	pop iy
-	pop ix
+	;wait until irq is unasserted
+	ld hl,$7f08
+	ld a,$e1
+-:	cp (hl)
+	jr nc,-
 	
 	pop hl
-	pop de
-	pop bc
-	pop af
-	
-	ex af,af'
-	exx
-	pop hl
-	pop de
-	pop bc
 	pop af
 	
 	ei
@@ -428,14 +413,121 @@ reset:
 	
 	
 	
-	ld a,0
-	ld de,0
+	
+	
+return_main_loop:
+	;;; wait for next frame
+	ld ix,k_frame_cnt
+	
+	ld a,(ix+1)
+-:	cp (ix+0)
+	jr z,-
+	
+	inc (ix+1)
+	
+	
+	;;; handle 68k commands
+	
+	ld h,>comm_buf
+	ld a,(k_comm_index)
+	ld l,a
+	ld a,(comm_end_index)
+	cp l
+	jr z,@no_command
+	ld b,a
+	
+@command_loop:
+	ld ix,@command_tbl
+	ld e,(hl)
+	inc l
+	ld d,0
+	add ix,de
+	ld de,@next_command
+	push de
+	jp (ix)
+	
+@command_tbl:
+	jr @cmd_init
+	jr @cmd_volume
+	jr @cmd_seek
+	jr @cmd_pause
+	jr @cmd_resume
+	jr @cmd_stop
+	
+@get_song_slot:
+	ld a,(hl)
+	inc l
+	push hl
+	call set_song_slot
+	pop hl
+	ret
+	
+@cmd_init:
+	ld a,(hl)
+	inc l
+	ld e,(hl)
+	inc l
+	ld d,(hl)
+	inc l
+	push bc
+	push hl
 	call kn_init
+	pop hl
+	pop bc
+	ret
+	
+@cmd_volume:
+	call @get_song_slot
+	ld a,(hl)
+	inc l
+	ld (iy+ss_volume),a
+	ret
+	
+@cmd_seek:
+	call @get_song_slot
+	ld a,(hl)
+	inc l
+	ld (iy+ss_patt_break),a
+	ret
+	
+@cmd_pause:
+	call @get_song_slot
+	res SS_FLG_ON,(iy+ss_flags)
+	ret
+	
+@cmd_resume:
+	call @get_song_slot
+	bit 7,(iy+ss_song_id+1)
+	ret nz
+	set SS_FLG_ON,(iy+ss_flags)
+	ret
+	
+@cmd_stop:
+	call @get_song_slot
+	ld (iy+ss_flags),0
+	ld a,$ff
+	ld (iy+ss_song_id),a
+	ld (iy+ss_song_id+1),a
+	ret
+	
+	
+@next_command:
+	ld a,l
+	cp b
+	jr nz,@command_loop
+	ld (k_comm_index),a
+	
+@no_command:
 	
 	
 	
--:
-	jr -
+	
+	
+	;;; play music
+	call kn_play
+	
+	
+	jp return_main_loop
 	
 	
 	
@@ -689,14 +781,17 @@ kn_init:
 @track_init_loop:
 
 	;; first, clear variables
-	ld d,ixh
-	ld e,ixl
+	ld a,ixl ;adjust pointer back -$80
+	sub $80
+	ld e,a
+	ld a,ixh
+	sbc 0
+	ld d,a
 	ld b,t_size
-	ex de,hl
--:	ld (hl),0
-	inc hl
+	xor a
+-:	ld (de),a
+	inc de
 	djnz -
-	ex de,hl
 	
 	
 	;; init pattern player

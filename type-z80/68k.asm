@@ -75,7 +75,7 @@ kn_reset::
 	
 	
 	
-	
+	moveq #0,d0
 	move.w d0,(a2) ;reset on
 	move.w d0,(a1) ;busreq off
 
@@ -98,14 +98,132 @@ z80_pointer_table_end:
 	
 	
 	
-kn_init::
-kn_volume::
-kn_seek::
-kn_pause::
-kn_resume::
-kn_stop::
-kn_sync::
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; 68k -> z80 functions
+	
+z80_enter:
+	lea Z80BUSREQ,a0
+	move.w #$0100,d0
+	move.w d0,(a0)
+.waitloop
+	cmp.w (a0),d0
+	beq .waitloop
+	
+	lea z80_comm_buf,a1
+	moveq #0,d1
+	move.b z80_comm_index,d1
 	rts
+	
+	
+	
+z80_exit:
+	move.b d1,z80_comm_index
+	
+	clr.w Z80BUSREQ
+	rts
+	
+	
+	macro z80_comm
+		move.b \1,(a1,d1)
+		addq.b #1,d1
+	endm
+	
+	
+	
+kn_init::
+	cargs #4, .arg_song_slot.l, .arg_song_id.l
+	bsr z80_enter
+	
+	z80_comm #0 * 2
+	
+	z80_comm .arg_song_slot+3(sp)
+	
+	move.l .arg_song_id(sp),d0
+	btst #31,d0
+	beq .noloop
+	bset #15,d0
+.noloop	
+	z80_comm d0
+	lsr.w #8,d0
+	z80_comm d0
+	
+	
+	bra z80_exit
+	
+	
+kn_volume::
+	cargs #4, .arg_song_slot.l, .arg_volume.l
+	bsr z80_enter
+	
+	z80_comm #1 * 2
+	
+	z80_comm .arg_song_slot+3(sp)
+	z80_comm .arg_volume+3(sp)
+	
+	bra z80_exit
+	
+	
+	
+kn_seek::
+	cargs #4, .arg_song_slot.l, .arg_order.l
+	bsr z80_enter
+	
+	z80_comm #2 * 2
+	
+	z80_comm .arg_song_slot+3(sp)
+	z80_comm .arg_order+3(sp)
+	
+	bra z80_exit
+	
+	
+kn_pause::
+	cargs #4, .arg_song_slot.l
+	bsr z80_enter
+	
+	z80_comm #3 * 2
+	
+	z80_comm .arg_song_slot+3(sp)
+	
+	bra z80_exit
+	
+	
+kn_resume::
+	cargs #4, .arg_song_slot.l
+	bsr z80_enter
+	
+	z80_comm #4 * 2
+	
+	z80_comm .arg_song_slot+3(sp)
+	
+	bra z80_exit
+	
+	
+kn_stop::
+	cargs #4, .arg_song_slot.l
+	bsr z80_enter
+	
+	z80_comm #5 * 2
+	
+	z80_comm .arg_song_slot+3(sp)
+	
+	bra z80_exit
+	
+	
+	
+kn_sync::
+	bsr z80_enter
+	
+	lea z80_sync_flag,a0
+	
+	moveq #0,d0
+	move.b (a0),d0
+	sf (a0)
+	
+	bra z80_exit
+	
+	
 	
 	
 	
