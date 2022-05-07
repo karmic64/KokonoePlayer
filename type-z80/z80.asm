@@ -1914,6 +1914,92 @@ kn_play:
 	
 	
 	
+	;;;;;;;;;;;;;;;;;;;;;;
+	;; cut: if cut <= speedcnt then keyoff
+	ld a,(ix+t_cut)
+	or a
+	jr z,@@nocut
+	cp (iy+ss_speed_cnt)
+	jr z,+
+	jr nc,@@nocut
++:	
+	set T_FLG_KEYOFF,(ix+t_flags)
+	ld (ix+t_cut),0
+@@nocut:
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;
+	;; retrig
+	ld a,(ix+t_retrig)
+	or a
+	jr z,@@noretrig
+	
+	cp (ix+t_retrig_cnt)
+	jr nz,@@stepretrig
+	
+	ld (ix+t_retrig_cnt),1
+	set T_FLG_NOTE_RESET,(ix+t_flags)
+	
+	jr @@notereset
+	
+@@stepretrig:
+	inc (ix+t_retrig_cnt)
+	
+@@noretrig:
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; handle note resets
+	bit T_FLG_NOTE_RESET,(ix+t_flags)
+	jr z,@@nonotereset
+	
+@@notereset:
+	;reset the macro volume to its default
+	ld b,$7f
+	ld a,(ix+t_chn)
+	cp 6+4
+	jr c,+
+	ld b,$0f
++:	ld (ix+t_macro_vol),b
+	
+	;disable macro arp
+	ld (ix+t_macro_arp),$ff
+	
+	;restart all macros
+	.if MACRO_SLOTS > 0
+	
+	ld d,ixh
+	ld e,ixl
+	ld hl,t_macros+mac_index
+	add hl,de
+	
+	ld b,MACRO_SLOTS
+	ld de,mac_size
+	xor a
+-:	ld (hl),a
+	add hl,de
+	djnz -
+	
+	.endif
+	
+	
+@@nonotereset:
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
 	
 	
 	
