@@ -1256,7 +1256,7 @@ kn_play:
 	ld a,(k_temp)
 	cp 2
 	jr c,@@@notsampleinstr
-	ld (t_instr_sample_type),a
+	ld (ix+t_instr_sample_type),a
 	
 	push bc
 	push hl
@@ -1770,9 +1770,8 @@ kn_play:
 	jr z,@@@noretarget
 	ld l,(ix+t_slide)
 	ld h,(ix+t_slide+1)
-	ld a,h
-	or a
-	jp p,@@@inittargetslide
+	bit 7,h
+	jr z,@@@inittargetslide
 	cpl
 	ld h,a
 	ld a,l
@@ -2367,9 +2366,8 @@ kn_play:
 	jr @@afterslide
 	
 @@@downclamp:
-	ld a,h ;fnum can't go below 0
-	or a
-	jp p,@@afterslidefm
+	bit 7,h ;fnum can't go below 0
+	jr z,@@afterslidefm
 	ld hl,0
 	jr @@afterslide
 	
@@ -2403,10 +2401,8 @@ kn_play:
 	ld a,d
 	sbc h
 	
-	push af
-	ld a,(t_slide+1)
-	or a
-	jp m,@@@sub
+	bit 7,(ix+t_slide+1)
+	jr nz,@@@sub
 	
 @@@add:
 	;when adding, the note is hit when target < pitch
@@ -2497,6 +2493,61 @@ kn_play:
 	
 	
 	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; volume slide
+@@volslide:
+	ld a,(ix+t_vol_slide)
+	or a
+	jr z,@@novolslide
+	
+	;lower 2 bits are the new fractional part
+	add a,(ix+t_vol_frac)
+	ld b,a
+	and 3
+	ld (ix+t_vol_frac),a
+	
+	;get the max volume in c
+	ld c,$80
+	ld a,(ix+t_chn)
+	cp 10
+	jr c,+
+	ld c,$10
++:	
+	
+	;upper 6 bits are the signed non-fractional add value
+	ld a,b
+	sra a
+	sra a
+	ld b,a
+	add (ix+t_vol)
+	
+	bit 7,b
+	jr nz,@@@sub
+	
+@@@add:
+	;adding. when volume is > max, set it to max
+	cp c
+	jr c,@@@set
+	ld a,c
+	dec a
+	ld (ix+t_vol_frac),3
+	jr @@@set
+	
+@@@sub:
+	;subtracting. when volume underflows, set it to 0
+	or a
+	jp p,@@@set
+	xor a
+	ld (ix+t_vol_frac),a
+	
+@@@set:
+	ld (ix+t_vol),a
+	
+@@novolslide:
+	
+	
+	
+	
 	
 	
 	
@@ -2558,9 +2609,8 @@ get_note_pitch:
 	inc hl
 	ld d,(hl)
 	
-	ld a,b
-	or a ;octave negative?
-	jp m,@@low
+	bit 7,b ;octave negative?
+	jr nz,@@low
 	cp 8 ;octave too high?
 	jr nc,@@high
 	
