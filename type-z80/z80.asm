@@ -94,7 +94,8 @@ t_note dsb 1
 ;;;
 t_instr dsw 1
 
-t_vol dsw 1 ;this is a word because volume slide needs a fractional part- most routines should only access the upper byte
+t_vol dsb 1 ;this is a word because volume slide needs a fractional part- most routines should only access the upper byte
+t_vol_frac dsb 1
 t_vol_slide dsb 1
 t_pan dsb 1
 
@@ -2480,6 +2481,17 @@ kn_play:
 	
 	
 	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; vibrato
+	ld a,(ix+t_vib)
+	rrca
+	rrca
+	rrca
+	rrca
+	and $0f
+	add (ix+t_vib_phase)
+	ld (ix+t_vib_phase),a
 	
 	
 	
