@@ -2549,6 +2549,31 @@ kn_play:
 	
 	
 	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; tell what channel we're on
+	
+	;if the track is cut, don't set it
+	bit T_FLG_CUT,(ix+t_flags)
+	jr nz,@@nosetchn
+	
+	;if a psg channel is keyed off, don't set it
+	ld a,(ix+t_chn)
+	cp 10
+	jr c,@@setchn
+	bit T_FLG_KEYOFF,(ix+t_flags)
+	jr nz,@@nosetchn
+	
+	
+@@setchn:
+	ld hl,k_chn_track
+	ld e,a
+	ld d,0
+	add hl,de
+	ld a,(k_cur_track)
+	ld (hl),a
+	
+@@nosetchn:
+	
 	
 	
 	
