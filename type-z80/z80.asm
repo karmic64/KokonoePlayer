@@ -77,6 +77,8 @@ t_chn dsb 1
 
 t_seq_base dsb 3
 t_patt_ptr dsb 3
+t_patt_dur_index dsb 1
+t_patt_base_note dsb 1
 
 t_dur_cnt dsb 1
 t_dur_save dsb 1
@@ -1030,10 +1032,918 @@ kn_play:
 	
 	
 	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; clear out used channels
+	
+	ld hl,k_chn_track
+	ld b,KN_CHANNELS
+	ld a,$ff
+-:	ld (hl),a
+	inc hl
+	djnz -
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; main track loop
+	
+	xor a
+	ld ix,k_tracks
+@trackloop:
+	ld (k_cur_track),a
+	ld (k_cur_track_ptr),ix
+	
+	bit T_FLG_ON,(ix+t_flags)
+	jp z,@@notrack
+	
+	call get_track_song_slot
+	bit SS_FLG_ON,(iy+ss_flags)
+	jp z,@@notrack
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; check pattern timers
+	ld a,(ix+t_delay)
+	or a
+	jr z,@@nowaitdelay
+	cp (iy+ss_speed_cnt)
+	jp nz,@@nonewsongdata
+	ld (ix+t_delay),0
+	jr @@dosongdata
+	
+@@nowaitdelay:
+	;if the speedcnt is 0, that means it overflowed and we should get a new row
+	ld a,(iy+ss_speed_cnt)
+	or a
+	jp nz,@@nonewsongdata
+	
+	;A is 0, clear some effects on new row
+	ld (ix+t_retrig),a
+	ld (ix+t_cut),a
+	
+	
+	;has the duration expired?
+	dec (ix+t_dur_cnt)
+	jp nz,@@nonewsongdata
+	
+	
+	
+@@dosongdata:
+	;;;;;;;;;;;;;;;;;;;;;;
+	;; get banked pattern pointer in chl
+	; if the row is 0, get it from the sequence table
+	; otherwise look at the pointer variable
+	ld a,(iy+ss_row)
+	or (iy+ss_row+1)
+	jr nz,@@oldpatt
+	
+	;get from sequence table
+	ld l,(ix+t_seq_base)
+	ld h,(ix+t_seq_base+1)
+	ld a,(ix+t_seq_base+2)
+	
+	ld e,(iy+ss_order)
+	ld d,0
+	
+	call indexed_read_68k_ptr
+	
+	rst get_byte
+	ld (ix+t_patt_dur_index),a
+	rst get_byte
+	ld (ix+t_patt_base_note),a
+	
+	jr @@gotpatt
+	
+@@oldpatt:
+	ld l,(ix+t_patt_ptr)
+	ld h,(ix+t_patt_ptr+1)
+	ld c,(ix+t_patt_ptr+2)
+	rst set_bank
+	
+@@gotpatt:
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; read pattern data
+@@patt_read:
+	rst get_byte
+	
+	;;;;;; delay
+	cp $fe
+	jr nz,@@@nodelay
+	
+	rst get_byte ;delay time
+	
+	;get current row speed in (hl)
+	push hl
+	ld d,iyh
+	ld e,iyl
+	ld hl,ss_speed1
+	add hl,de
+	bit 0,(iy+ss_row)
+	jr z,+
+	inc hl
++:	;if delay rate >= row speed, ignore it
+	cp (hl)
+	pop hl
+	jr nc,@@@delaytoobig
+	ld (ix+t_delay),a
+	jp @@aftersongdata
+	
+@@@delaytoobig:
+	rst get_byte
+@@@nodelay:
+	
+	
+	;;;;;; instrument change
+	cp $fc
+	jp c,@@@noinstr
+	
+	; get instrument number in de
+	ld d,0
+	jr z,@@@shortinstr
+	rst get_byte
+	ld d,a
+@@@shortinstr:
+	rst get_byte
+	ld e,a
+	
+	; don't set the same instrument twice
+	cp (ix+t_instr)
+	jr nz,@@@setinstr
+	ld a,d
+	cp (ix+t_instr+1)
+	jp z,@@@sameinstr
+	
+	
+@@@setinstr:
+	ld (ix+t_instr),e
+	ld (ix+t_instr+1),d
+	
+	; get instrument pointer
+	push bc
+	push hl
+	
+	ld hl,(instrument_tbl_base)
+	ld a,(instrument_tbl_base+2)
+	call indexed_read_68k_ptr
+	
+	;read instrument properties
+	rst get_byte ;type
+	ld (k_temp),a
+	rst get_byte ;macro count
+	
+	;; set up macros
+	.if MACRO_SLOTS > 0
+	ld iy,k_temp+1
+	ld (iy+0),a
+	
+	;get pointer to macros in ix
+	ld de,t_macros
+	add ix,de
+	
+	xor a
+@@@macroloop:
+	ld (k_temp+2),a ;current macro
+	
+	cp (iy+0) ;if current macro >= macro count, just clear
+	jr nc,@@@@clear
+	;otherwise get the banked pointer
+	
+	rst get_byte ;discard unused address byte
+	rst get_byte ;3rd byte
+	ld d,a
+	rst get_byte ;2nd byte
+	ld e,a
+	rst get_byte ;lsb
+	ld (ix+mac_base),a
+	ld a,e
+	rla
+	rl d
+	set 7,e
+	ld (ix+mac_base+1),e
+	ld (ix+mac_base+2),d
+	
+	jr @@@@next
+	
+@@@@clear:
+	xor a
+	ld (ix+mac_base),a
+	ld (ix+mac_base+1),a
+	ld (ix+mac_base+2),a
+@@@@next:
+	xor a
+	ld (ix+mac_index),a
+	
+	
+	ld de,mac_size
+	add ix,de
+	
+	ld a,(k_temp+2)
+	inc a
+	cp MACRO_SLOTS
+	jr c,@@@macroloop
+	
+	ld ix,(k_cur_track_ptr)
+	ld iy,(k_cur_song_slot_ptr)
+	
+	.endif
+	
+	
+	;read any extra data depending on the type
+	ld a,(k_temp)
+	cp 2
+	jr c,@@@notsampleinstr
+	ld (t_instr_sample_type),a
+	
+	push bc
+	push hl
+	
+	jr nz,@@@melosampleinstr
+	
+	;TODO: mapped sample instrument
+	
+	jr @@@setsampleinstr
+	
+@@@melosampleinstr:
+	;get sample id in de
+	rst get_byte
+	ld d,a
+	rst get_byte
+	ld e,a
+	
+	ld hl,(sample_tbl_base)
+	ld a,(sample_tbl_base+2)
+	call indexed_read_68k_ptr
+	
+@@@setsampleinstr:
+	ld (ix+t_instr_sample),l
+	ld (ix+t_instr_sample+1),h
+	ld (ix+t_instr_sample+2),c
+	
+	pop hl
+	pop bc
+	rst set_bank
+	
+	jr @@@afterinstr
+	
+	
+	
+@@@notsampleinstr:
+	
+	or a ;fm instrument?
+	jr z,@@@notfminstr
+	
+	;push bc
+	;push hl
+	;get sample id in de
+	rst get_byte
+	ld d,a
+	rst get_byte
+	ld e,a
+	
+	ld hl,(fm_tbl_base)
+	ld a,(fm_tbl_base+2)
+	call indexed_read_68k_ptr
+	
+	push hl
+	ld d,ixh
+	ld e,ixl
+	ld hl,t_fm
+	add hl,de
+	ex de,hl
+	pop hl
+	
+	ld b,30
+-:	rst get_byte
+	ld (de),a
+	inc de
+	djnz -
+	
+	set T_FLG_FM_UPDATE,(ix+t_flags)
+	
+	;pop hl
+	;pop bc
+	
+@@@notfminstr:
+	
+	xor a
+	ld (ix+t_instr_sample),a
+	ld (ix+t_instr_sample+1),a
+	ld (ix+t_instr_sample+2),a
+	ld (ix+t_instr_sample_type),a
+	
+	
+	
+@@@afterinstr:
+	pop hl
+	pop bc
+	rst set_bank
+	
+@@@sameinstr:
+	rst get_byte
+@@@noinstr:
+	
+	
+	;;;;;;;;;;; volume
+	cp $fb
+	jr nz,@@@novol
+	rst get_byte
+	ld (ix+t_vol),a
+	rst get_byte
+@@@novol:
+	
+	
+	;;;;;;;;;;;;; effects
+	
+	;; 20xx psg noise
+	cp EFF_NOISE
+	jr nz,+
+	rst get_byte
+	ld (ix+t_psg_noise),a
+	rst get_byte
++:	
+	
+	;; 19xx global AR
+	cp EFF_AR
+	jr nz,+
+	
+	rst get_byte
+	push bc
+	ld c,a
+	ld de,t_fm+fm_50
+	add ix,de
+	
+	ld b,4
+-:	ld a,(ix+0)
+	and $e0
+	or c
+	ld (ix+0),a
+	inc ix
+	djnz -
+	
+	pop bc
+	ld ix,(k_cur_track_ptr)
+	set T_FLG_FM_UPDATE,(ix+t_flags)
+	
+	rst get_byte
++:	
+	
+	;; 1Axx-1Dxx operator AR
+	ld de,t_fm+fm_50+3
+	add ix,de
+	ld b,EFF_AR4
+-:	cp b
+	jr nz,+
+	
+	rst get_byte
+	ld e,a
+	ld a,(ix+0)
+	and $e0
+	or e
+	ld (ix+0),a
+	set T_FLG_FM_UPDATE,(ix+t_flags)
+	
+	rst get_byte
+	
++:	dec ix
+	dec b
+	ld d,a
+	ld a,b
+	cp EFF_AR1
+	ld a,d
+	jr nc,-
+	
+	ld ix,(k_cur_track_ptr)
+	
+	
+	;; 17xx dac mode
+	cp EFF_DAC
+	jr nz,+
+	rst get_byte
+	ld (ix+t_dac_mode),a
+	rst get_byte
++:	
+	
+	
+	;; 16xy mult
+	cp EFF_MUL
+	jr nz,+
+	
+	rst get_byte
+	
+	push af
+	push hl
+	rrca
+	rrca
+	rrca
+	rrca
+	and $0f
+	ld l,a
+	ld h,0
+	ld de,t_fm+fm_30
+	add hl,de
+	ex de,hl
+	add ix,de
+	pop hl
+	pop af
+	and $0f
+	ld b,a
+	
+	ld a,(ix+0)
+	and $70
+	or b
+	ld (ix+0),a
+	
+	ld ix,(k_cur_track_ptr)
+	set T_FLG_FM_UPDATE,(ix+t_flags)
+	
+	rst get_byte
++:	
+	
+	;; 1Axx-1Dxx operator TL
+	ld de,t_fm+fm_40+3
+	add ix,de
+	ld b,EFF_TL4
+-:	cp b
+	jr nz,+
+	
+	rst get_byte
+	ld (ix+0),a
+	;set T_FLG_FM_UPDATE,(ix+t_flags) ;tl is ALWAYS updated
+	
+	rst get_byte
+	
++:	dec ix
+	dec b
+	ld d,a
+	ld a,b
+	cp EFF_TL1
+	ld a,d
+	jr nc,-
+	
+	ld ix,(k_cur_track_ptr)
+	
+	
+	
+	;; 11xx feedback
+	cp EFF_FB
+	jr nz,+
+	
+	rst get_byte
+	rlca
+	rlca
+	rlca
+	ld d,a
+	
+	ld a,(ix+t_fm+fm_b0)
+	and $c7
+	or d
+	ld (ix+t_fm+fm_b0),a
+	set T_FLG_FM_UPDATE,(ix+t_flags)
+	
+	rst get_byte
++:	
+	
+	;; 10xx lfo
+	cp EFF_LFO
+	jr nz,+
+	rst get_byte
+	ld (k_fm_lfo),a
+	set T_FLG_FM_UPDATE,(ix+t_flags)
+	rst get_byte
++:	
+	
+	
+	;;;;;;
+	
+	;; EExx sync
+	cp EFF_SYNC
+	jr nz,+
+	rst get_byte
+	ld (sync_flag),a
+	rst get_byte
++:	
+	;; ECxx cut
+	cp EFF_CUT
+	jr nz,+
+	rst get_byte
+	ld (ix+t_cut),a
+	rst get_byte
++:	
+	;; EBxx sample bank
+	cp EFF_SMPLBANK
+	jr nz,+
+	rst get_byte
+	ld (ix+t_smpl_bank),a
+	rst get_byte
++:	
+	;; EAxx legato
+	cp EFF_LEGATO
+	jr nz,+
+	rst get_byte
+	ld (ix+t_legato),a
+	rst get_byte
++:	
+	;; E5xx finetune
+	cp EFF_FINETUNE
+	jr nz,+
+	rst get_byte
+	ld (ix+t_finetune),a
+	rst get_byte
++:	
+	;; E4xx fine vib depth
+	cp EFF_VIBDEPTH
+	jr nz,+
+	rst get_byte
+	ld (ix+t_vib_fine),a
+	rst get_byte
++:	
+	;; E3xx vib mode
+	cp EFF_VIBMODE
+	jr nz,+
+	rst get_byte
+	ld (ix+t_vib_mode),a
+	rst get_byte
++:	
+	;; E0xx arp speed
+	cp EFF_ARPTICK
+	jr nz,+
+	rst get_byte
+	ld (ix+t_arp_speed),a
+	rst get_byte
++:	
+	
+	
+	;;;;;
+	
+	;; Cxx retrig
+	cp EFF_RETRIG
+	jr nz,+
+	rst get_byte
+	ld (ix+t_retrig),a
+	ld (ix+t_retrig_cnt),0
+	rst get_byte
++:	
+	
+	;; Bxx/Dxx pattern break
+	cp EFF_PATTBREAK
+	jr nz,@@@nopattbreak
+	
+	rst get_byte
+	cp $ff
+	jr nz,+
+	ld a,(iy+ss_order)
+	inc a
++:	cp (iy+ss_song_size)
+	jr nc,+
+	
+	ld (iy+ss_patt_break),a
++:
+	rst get_byte
+@@@nopattbreak:
+	
+	
+	;; Axy volume slide
+	cp EFF_VOLSLIDE
+	jr nz,+
+	rst get_byte
+	ld (ix+t_vol_slide),a
+	rst get_byte
++:	
+	;; Fxx speed 2
+	cp EFF_SPEED2
+	jr nz,+
+	rst get_byte
+	ld (iy+ss_speed2),a
+	rst get_byte
++:	
+	;; 9xx speed 1
+	cp EFF_SPEED1
+	jr nz,+
+	rst get_byte
+	ld (iy+ss_speed1),a
+	rst get_byte
++:	
+	;; 8xx panning
+	cp EFF_PANNING
+	jr nz,+
+	rst get_byte
+	ld (ix+t_pan),a
+	rst get_byte
++:	
+	;; 4xy vibrato
+	cp EFF_VIBRATO
+	jr nz,+
+	rst get_byte
+	ld (ix+t_vib),a
+	rst get_byte
++:	
+	;; 0xy arpeggio
+	cp EFF_ARP
+	jr nz,+
+	rst get_byte
+	ld (ix+t_arp),a
+	rst get_byte
++:	
+	
+	;; get pitch slide effect to act on it later
+	cp EFF_PORTAUP
+	jr c,@@@notenopitcheff
+	
+	ld (k_temp),a ;effect code
+	
+	rst get_byte ;param
+	ld (k_temp+1),a
+	
+	rst get_byte
+	jr @@@afternotepitcheff
+	
+@@@notenopitcheff:
+	
+	ex af,af'
+	xor a
+	ld (k_temp),a
+	ex af,af'
+	
+@@@afternotepitcheff:
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;; note column
+	
+@@notecol:
+	;; get duration
+	push af
+	cp $a0
+	jr nc,@@@recalldur
+	or a
+	jp p,@@@normaldur
+	
+	rst get_byte
+	ld (ix+t_dur_save),a
+	jr @@@setdur
+	
+@@@recalldur:
+	ld a,(ix+t_dur_save)
+	jr @@@setdur
+	
+@@@normaldur:
+	push bc
+	push hl
+	
+	rlca
+	rlca
+	rlca
+	and 3
+	ld e,a
+	ld d,0
+	
+	ld l,(ix+t_patt_dur_index)
+	ld h,0
+	add hl,hl
+	add hl,hl
+	add hl,de
+	ex de,hl
+	
+	ld hl,(duration_tbl_base)
+	ld a,(duration_tbl_base+2)
+	ld c,a
+	call step_ptr
+	
+	ld a,(hl)
+	
+	pop hl
+	pop bc
+	rst set_bank
+	
+@@@setdur:
+	ld (ix+t_dur_cnt),a
+	
+	pop af
+	
+	
+	;; get note
+	push bc
+	push hl
+	and $1f
+	cp $1e
+	jr c,@@@nonoteoff
+	jr nz,@@@blanknote
+	
+	set T_FLG_KEYOFF,(ix+t_flags)
+	
+	xor a
+	ld (ix+t_slide),a
+	ld (ix+t_slide+1),a
+	dec a
+	ld (ix+t_slide_target),a
+	
+	jp @@@afternote
+	
+	
+@@@nonoteoff:
+	cp $1d
+	jr nz,@@@nolongnote
+	rst get_byte
+	jr @@@gotnote
+@@@nolongnote:
+	add (ix+t_patt_base_note)
+@@@gotnote:
+	ld e,a ;save note in e
+	
+	ld a,(k_temp+1) ;save pitch effect param in d
+	ld d,a
+	
+	ld a,(k_temp)
+	cp EFF_TONEPORTA ;if there will be a toneporta, just init it
+	jr z,@@@inittargetslide
+	
+	;if there will be another slide, always reinit the note
+	or a
+	jr nz,@@@noretarget
+	
+	;if there is already a targeted slide, change the target
+	ld a,(ix+t_slide_target)
+	cp $ff
+	jr z,@@@noretarget
+	ld l,(ix+t_slide)
+	ld h,(ix+t_slide+1)
+	ld a,h
+	or a
+	jp p,@@@inittargetslide
+	cpl
+	ld h,a
+	ld a,l
+	cpl
+	ld l,a
+	inc hl
+	jr @@@inittargetslide
+	
+	;init note as normal
+@@@noretarget:
+	ld a,e
+	ld (ix+t_note),a
+	call get_note_pitch
+	ld (ix+t_pitch),l
+	ld (ix+t_pitch),h
+	
+	bit SS_FLG_CONT_VIB,(iy+ss_flags)
+	jr nz,+
+	ld (ix+t_vib_phase),0
++:	
+	;if legato is on, just change the pitch
+	ld a,(ix+t_legato)
+	or a
+	jr nz,+
+	ld a,(ix+t_flags)
+	res T_FLG_KEYOFF,a
+	res T_FLG_CUT,a
+	set T_FLG_NOTE_RESET,a
+	ld (ix+t_flags),a
++:	
+	
+	
+@@@blanknote:
+	
+	;any other pitch effects?
+	;(row note is in e, param is in d)
+	ld a,(k_temp)
+	or a
+	jr z,@@@afternote
+	cp EFF_PORTADOWN
+	jr z,@@@effportadown
+	jr c,@@@effportaup
+	
+@@@effnoteslide:
+	;speed in hl
+	ld a,d
+	and $f0
+	rrca
+	rrca
+	ld l,a
+	ld h,0
+	;target note in e
+	ld a,d
+	and $0f
+	ld b,a
+	ld a,(k_temp)
+	cp EFF_NOTEDOWN
+	ld a,b
+	jr nz,+
+	neg
++:	add (ix+t_note)
+	jr +
+	
+	;speed in hl, target note in e
+@@@inittargetslide:
+	ld a,e
+	ld (ix+t_slide_target),a
++:	
+	push hl
+	call get_note_pitch
+	pop de
+	
+	ld a,(ix+t_pitch)
+	cp l
+	ld a,(ix+t_pitch+1)
+	sbc h
+	
+	;if pitch < target pitch, don't negate slide
+	jr c,+
+	ld a,e
+	cpl
+	ld e,a
+	ld a,d
+	cpl
+	ld d,a
+	inc de
++:	
+	jr @@@setslide
+	
+	
+	;regular portamento (speed is in d).
+	;we need to negate the speed if portamento is down XOR this is a psg channel
+@@@effportadown:
+	ld e,1
+	jr +
+@@@effportaup:
+	ld e,0
+	
++:	ld a,(ix+t_chn)
+	cp 10
+	ccf
+	rla
+	xor e
+	
+	ld e,d
+	ld d,0
+	
+	jr z,+
+	ld a,e
+	cpl
+	ld e,a
+	ld a,d
+	cpl
+	ld d,a
+	inc de
++:
+	
+	ld (ix+t_slide_target),$ff
+	
+@@@setslide:
+	ld (ix+t_slide),e
+	ld (ix+t_slide+1),d
+	
+	
+@@@afternote:
+	pop hl
+	pop bc
+	
+	
+@@aftersongdata:
+	
+	ld (ix+t_patt_ptr),l
+	ld (ix+t_patt_ptr+1),h
+	ld (ix+t_patt_ptr+2),c
+	
+@@nonewsongdata:
+	
+	
+	
+	
+	
+	
+	
+	
+	
+@@notrack:
+	ld de,t_size
+	add ix,de
+	ld a,(k_cur_track)
+	inc a
+	cp KN_TRACKS
+	jp c,@trackloop
+	
+	
+	
+	
+	
 	
 	ret
 	
 	
+	
+	
+	
+	
+	
+	
+	
+get_note_pitch:
+	; TODO, for now it returns in hl
+	
+	ret
 	
 	
 	

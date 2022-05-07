@@ -1219,7 +1219,6 @@ kn_play::
 	bhs .targetslideadd
 	neg.w d6
 .targetslideadd:
-	move.w d6,t_slide(a5)
 	
 	bra .effsetslide
 	
