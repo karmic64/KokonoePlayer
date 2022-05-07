@@ -179,7 +179,7 @@ ss_size .db
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; private variables
-.enum $0c00 ;this may need to be increased in the future
+.enum $1000 ;this may need to be increased in the future
 
 
 k_temp dsb $10 ;general-purpose temporary storage
@@ -535,6 +535,8 @@ return_main_loop:
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;; misc routines
 	
+step_ptr_ahl:
+	ld c,a
 	;add de to banked pointer chl, then set the bank
 step_ptr:
 	add hl,de
@@ -590,13 +592,12 @@ muls:
 	
 	;read 68k pointer indirect from (banked ahl)+(de*4)+1
 indexed_read_68k_ptr:
-	ld c,a
 	ex de,hl
 	add hl,hl
 	add hl,hl
 	inc hl
 	ex de,hl
-	call step_ptr
+	call step_ptr_ahl
 	
 	;read 68k pointer from banked pointer chl, convert into chl, then set bank
 read_68k_ptr:
@@ -1708,8 +1709,7 @@ kn_play:
 	
 	ld hl,(duration_tbl_base)
 	ld a,(duration_tbl_base+2)
-	ld c,a
-	call step_ptr
+	call step_ptr_ahl
 	
 	ld a,(hl)
 	
@@ -1786,7 +1786,7 @@ kn_play:
 	ld (ix+t_note),a
 	call get_note_pitch
 	ld (ix+t_pitch),l
-	ld (ix+t_pitch),h
+	ld (ix+t_pitch+1),h
 	
 	bit SS_FLG_CONT_VIB,(iy+ss_flags)
 	jr nz,+
@@ -1879,7 +1879,8 @@ kn_play:
 	ld e,d
 	ld d,0
 	
-	jr z,+
+	rrca
+	jr nc,+
 	ld a,e
 	cpl
 	ld e,a
@@ -1940,9 +1941,104 @@ kn_play:
 	
 	
 	
-get_note_pitch:
-	; TODO, for now it returns in hl
 	
+	;note in a, returns pitch in hl
+get_note_pitch:
+	push bc
+	push de
+	ld l,a
+	ld h,0
+	add hl,hl
+	ex de,hl
+	
+	ld a,(ix+t_chn)
+	cp 10
+	jr nc,@psg
+	
+	
+@fm:	ld hl,(note_octave_tbl_base)
+	ld a,(note_octave_tbl_base+2)
+	call step_ptr_ahl
+	
+	rst get_byte ;octave
+	ld b,a
+	
+	rst get_byte ;note
+	ld l,a
+	ld h,0
+	ld de,fm_fnum_tbl
+	add hl,hl
+	add hl,de
+	
+	;get fnum in de
+	ld e,(hl)
+	inc hl
+	ld d,(hl)
+	
+	ld a,b
+	or a ;octave negative?
+	jp m,@@low
+	cp 8 ;octave too high?
+	jr nc,@@high
+	
+	;normal, just set the octave
+	rlca
+	rlca
+	rlca
+@@set:	
+	or d
+@@set2:
+	ld h,a
+	ld l,e
+	
+	jr @exit
+	
+	
+@@low:
+	srl d
+	rr e
+	inc a
+	jr nz,@@low
+@@exexit:
+	ex de,hl
+	jr @exit
+	
+	
+@@high:
+	sub 7
+	ld b,a
+	
+	ld a,d
+-:	sla e
+	rla
+	cp 8 ;if the fnum is >= $800, too bad
+	jr nc,@@too_high
+	djnz -
+	
+	or $38
+	ld d,a
+	jr @@exexit
+	
+	
+@@too_high:
+	ld hl,$3fff
+	jr @exit
+	
+	
+	
+@psg:	ld hl,(psg_period_tbl_base)
+	ld a,(psg_period_tbl_base+2)
+	call step_ptr_ahl
+	
+	rst get_byte
+	ld d,a
+	rst get_byte
+	ld e,a
+	ex de,hl
+	
+@exit:
+	pop de
+	pop bc
 	ret
 	
 	
