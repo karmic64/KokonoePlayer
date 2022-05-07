@@ -1952,6 +1952,7 @@ kn_play:
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; handle note resets
 	bit T_FLG_NOTE_RESET,(ix+t_flags)
+	res T_FLG_NOTE_RESET,(ix+t_flags)
 	jr z,@@nonotereset
 	
 @@notereset:
@@ -1985,6 +1986,310 @@ kn_play:
 	
 	
 @@nonotereset:
+	
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; handle macros
+	.if MACRO_SLOTS > 0
+	ld (ix+t_macro_arp),$ff
+	
+	ld iy,t_macros
+	ld d,ixh
+	ld e,ixl
+	add iy,de
+	
+	ld a,MACRO_SLOTS
+@@macro_loop:
+	ld (k_temp+5),a
+	
+	ld l,(iy+mac_base)
+	ld h,(iy+mac_base+1)
+	ld c,(iy+mac_base+2)
+	
+	ld a,l
+	or h
+	or c
+	jp z,@@next_macro
+	
+	;get macro parameters
+	rst set_bank
+	rst get_byte ;macro type
+	ld (k_temp),a
+	rst get_byte ;macro length
+	ld (k_temp+1),a
+	ld d,a
+	rst get_byte ;loop point
+	ld (k_temp+2),a
+	rst get_byte ;release point
+	ld (k_temp+3),a
+	
+	;get macro value
+	ld e,(iy+mac_index)
+	cp d ;is the macro over?
+	jr nz,@@@got_index
+	ld a,(k_temp+2) ;does it loop?
+	cp $ff
+	jp z,@@end_macro
+	ld e,a
+@@@got_index:
+	ld a,e
+	inc a
+	ld (iy+mac_index),a
+	ld d,0
+	call step_ptr
+	ld a,(hl)
+	ld (k_temp+4),a
+	
+	;dispatch based on macro type
+	ld a,(k_temp)
+	cp $20
+	jp c,@@@not_fm_op
+	
+	;add op number to ix
+	ld c,a
+	and 3
+	ld e,a
+	ld d,0
+	add ix,de
+	
+	;dispatch
+	ld hl,@@@fm_op_tbl
+	ld a,c
+	and $fc
+	rrca
+	ld e,a
+	add hl,de
+	ld de,@@@after_fm_op
+	push de
+	ld a,(k_temp+4)
+	jp (hl)
+	
+@@@fm_op_tbl:
+	jr @@@fm_op_tl
+	jr @@@fm_op_ar
+	jr @@@fm_op_d1r
+	jr @@@fm_op_d2r
+	jr @@@fm_op_rr
+	jr @@@fm_op_d1l
+	jr @@@fm_op_rs
+	jr @@@fm_op_mul
+	jr @@@fm_op_dt
+	jr @@@fm_op_am
+	jr @@@fm_op_ssg_eg
+	
+	
+@@@fm_op_tl:
+	cpl
+	and $7f
+	ld (ix+t_fm+fm_40),a
+	ret
+	
+@@@fm_op_ar:
+	and $1f
+	ld b,a
+	ld a,(ix+t_fm+fm_50)
+	and $c0
+	or b
+	ld (ix+t_fm+fm_50),a
+	ret
+	
+@@@fm_op_d1r:
+	and $1f
+	ld b,a
+	ld a,(ix+t_fm+fm_60)
+	and $80
+	or b
+	ld (ix+t_fm+fm_60),a
+	ret
+	
+@@@fm_op_d2r:
+	ld (ix+t_fm+fm_70),a
+	ret
+	
+@@@fm_op_rr:
+	and $0f
+	ld b,a
+	ld a,(ix+t_fm+fm_80)
+	and $f0
+	or b
+	ld (ix+t_fm+fm_80),a
+	ret
+	
+@@@fm_op_d1l:
+	and $0f
+	rlca
+	rlca
+	rlca
+	rlca
+	ld b,a
+	ld a,(ix+t_fm+fm_80)
+	and $0f
+	or b
+	ld (ix+t_fm+fm_80),a
+	ret
+	
+@@@fm_op_rs:
+	and 3
+	rrca
+	rrca
+	ld b,a
+	ld a,(ix+t_fm+fm_50)
+	and $1f
+	or b
+	ld (ix+t_fm+fm_50),a
+	ret
+	
+@@@fm_op_mul:
+	and $0f
+	ld b,a
+	ld a,(ix+t_fm+fm_30)
+	and $70
+	or b
+	ld (ix+t_fm+fm_30),a
+	ret
+	
+@@@fm_op_dt:
+	ld hl,@@@fm_dt_map
+	ld e,a
+	ld d,0
+	add hl,de
+	ld a,(ix+t_fm+fm_30)
+	and $0f
+	or (hl)
+	ld (ix+t_fm+fm_30),a
+	ret
+	
+@@@fm_op_am:
+	and 1
+	rrca
+	ld b,a
+	ld a,(ix+t_fm+fm_60)
+	and $1f
+	or b
+	ld (ix+t_fm+fm_60),a
+	ret
+	
+@@@fm_op_ssg_eg:
+	ld (ix+t_fm+fm_90),a	
+	ret
+	
+@@@fm_dt_map:
+	.db 7<<4, 6<<4, 5<<4, 0<<4, 1<<4, 2<<4, 3<<4, 4<<4	
+	
+@@@after_fm_op:
+	ld ix,(k_cur_track_ptr)
+	jr @@next_macro
+	
+	
+@@@not_fm_op:
+	
+	;dispatch
+	ld l,a
+	ld h,0
+	ld de,@@@macro_tbl
+	add hl,hl
+	add hl,de
+	ld de,@@next_macro
+	push de
+	ld a,(k_temp+4)
+	jp (hl)
+	
+@@@macro_tbl:
+	jr @@@vol
+	jr @@@arp
+	jr @@@arp_fixed
+	jr @@@noise
+	
+	jr @@@fm_alg
+	jr @@@fm_fb
+	jr @@@fm_fms
+	jr @@@fm_ams
+	
+	
+@@@vol:
+	ld (ix+t_macro_vol),a
+	ret
+	
+@@@arp:
+	add (ix+t_note)
+	ld (ix+t_macro_arp),a
+	ret
+	
+@@@arp_fixed:
+	add 5*12
+	ld (ix+t_macro_arp),a
+	ret
+	
+@@@noise:
+	ld (ix+t_psg_noise),a
+	ret
+	
+	
+@@@fm_alg:
+	and 7
+	ld b,a
+	ld a,(ix+t_fm+fm_b0)
+	and $38
+	or b
+	ld (ix+t_fm+fm_b0),a
+	ret
+	
+@@@fm_fb:
+	rlca
+	rlca
+	rlca
+	ld b,a
+	ld a,(ix+t_fm+fm_b0)
+	and 7
+	or b
+	ld (ix+t_fm+fm_b0),a
+	ret
+	
+@@@fm_fms:
+	and 7
+	ld b,a
+	ld a,(ix+t_fm+fm_b4)
+	and $30
+	or b
+	ld (ix+t_fm+fm_b4),a
+	ret
+	
+@@@fm_ams:
+	and 3
+	rlca
+	rlca
+	rlca
+	rlca
+	ld b,a
+	ld a,(ix+t_fm+fm_b4)
+	and 7
+	or b
+	ld (ix+t_fm+fm_b4),a
+	ret
+	
+	
+	;macro is over
+@@end_macro:
+	ld a,(k_temp) ;on fixed arps, disable the macro arp
+	cp 2
+	jr nz,+
+	ld (ix+t_macro_arp),$ff
++:
+	
+	
+@@next_macro:
+	ld de,mac_size
+	add iy,de
+	ld a,(k_temp+5)
+	dec a
+	jp nz,@@macro_loop
+	
+	
+	
+	ld iy,(k_cur_song_slot_ptr)
+	.endif
 	
 	
 	
