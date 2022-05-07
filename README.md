@@ -75,7 +75,7 @@ Simply `#include <kn.h>`, then call the functions as you would any other. Make s
 
 KokonoePlayer functions are **not** thread-safe. You must ensure that only one is ever called at a time.
 
-To request the Z80 bus (e.g. for DMA), it is OK to simply write directly to the bus request register. However, do not call `kn_reset` or `kn_play` while the Z80 bus must be held, because they will release the bus.
+To request the Z80 bus (e.g. for DMA), it is OK to simply write directly to the bus request register. However, do not call any KokonoePlayer functions while the Z80 bus must be held, because they may release the bus.
 
 ## KokonoePlayer function reference
 
@@ -99,7 +99,7 @@ Higher-numbered song slots are higher priority. For example, you could have 4 so
 ```c
 void kn_play();
 ```
-Run this routine once per VBlank to play music.
+Run this routine once per VBlank to play music. On the Z80 variant this does nothing, but it is recommended that you call it anyway so you can easily switch between the 68k and Z80 variants without having to modify any code.
 
 ### kn_volume
 ```c

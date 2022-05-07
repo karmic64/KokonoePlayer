@@ -2294,6 +2294,147 @@ kn_play:
 	
 	
 	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; pitch slide
+.define C_FNUM 644
+	bit SS_FLG_PT_SLIDE,(iy+ss_flags)
+	jr z,+
+	ld a,(iy+ss_speed_cnt)
+	or a
+	jp z,@@noslide
+	
++:
+	;slide add value in de
+	ld e,(ix+t_slide)
+	ld d,(ix+t_slide+1)
+	
+	ld a,e
+	or d
+	jp z,@@noslide
+	
+@@doslide:
+	;output pitch in hl
+	ld l,(ix+t_pitch)
+	ld h,(ix+t_pitch+1)
+	
+	ld a,(ix+t_chn)
+	cp 10
+	jr c,@@@fm
+	
+@@@psg:
+	add hl,de
+	jr @@afterslide
+
+
+@@@fm:
+	;get octave in b and fnum in hl
+	ld a,h
+	and $f8
+	ld b,a
+	ld a,h
+	and 7
+	ld h,a
+	
+	add hl,de
+	
+	ld a,l
+	cp <C_FNUM
+	ld a,h
+	sbc >C_FNUM
+	jr c,@@@down
+	ld a,l
+	cp <(C_FNUM*2)
+	ld a,h
+	sbc >(C_FNUM*2)
+	jr c,@@afterslidefm
+	
+@@@up:
+	ld a,b ;if we are already on octave 7 don't go up
+	cp $38
+	jr nc,@@@upclamp
+	srl h
+	rr l
+	add 8
+	jr @@afterslidefm2
+	
+@@@upclamp:
+	ld a,h ;don't allow fnum to go above $7ff
+	cp 8
+	jr c,@@afterslidefm
+	ld hl,$3fff
+	jr @@afterslide
+	
+@@@downclamp:
+	ld a,h ;fnum can't go below 0
+	or a
+	jp p,@@afterslidefm
+	ld hl,0
+	jr @@afterslide
+	
+@@@down:
+	ld a,b ;don't let octave go below 0
+	or a
+	jr z,@@@downclamp
+	add hl,hl
+	sub 8
+	ld b,a
+	
+@@afterslidefm:
+	ld a,b
+@@afterslidefm2:
+	or h
+	ld h,a
+	
+	
+@@afterslide:
+	;; if the slide is targeted, check if we hit the note
+	ld a,(ix+t_slide_target)
+	cp $ff
+	jr z,@@setslide
+	ex de,hl
+	call get_note_pitch
+	
+	;compare target - pitch
+	ex de,hl
+	ld a,e
+	cp l
+	ld a,d
+	sbc h
+	
+	push af
+	ld a,(t_slide+1)
+	or a
+	jp m,@@@sub
+	
+@@@add:
+	;when adding, the note is hit when target < pitch
+	pop af
+	jr c,@@@hit
+	jr @@setslide
+	
+@@@sub:
+	;when subtracting the note is hit when target >= pitch
+	pop af
+	jr c,@@setslide
+	
+@@@hit:
+	ld a,(ix+t_slide_target)
+	ld (ix+t_note),a
+	
+	ld (ix+t_slide_target),$ff
+	
+	ex de,hl ;make the target the pitch
+	
+	xor a
+	ld (ix+t_slide),a
+	ld (ix+t_slide+1),a
+	
+	
+@@setslide:
+	ld (ix+t_pitch),l
+	ld (ix+t_pitch+1),h
+	
+@@noslide:
 	
 	
 	
@@ -2481,7 +2622,6 @@ kn_song_slot_size_tbl:
 fm_chn3_freq_reg_tbl:
 	.db $ad,$ac,$ae,$a6
 	
-.define C_FNUM 644
 fm_fnum_tbl:
 	.dw 644,681,722,765,810,858,910,964,1021,1081,1146,1214
 	
