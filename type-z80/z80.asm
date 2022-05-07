@@ -2600,11 +2600,173 @@ kn_play:
 	
 	
 	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; psg output
+	
+	ld a,3 ;channel index
+@psg_loop:
+	ld (k_temp),a
+	
+	rrca ;psg register channel index
+	rrca
+	rrca
+	ld (k_temp+1),a
+	
+	;;; get track
+	ld a,(k_temp)
+	ld e,a
+	ld d,0
+	ld hl,k_chn_track+10
+	add hl,de
+	
+	ld a,(hl)
+	or a
+	jp p,@@ok
+@@kill:
+	ld a,(k_temp+1)
+	or $9f
+	ld (PSG),a
+	jp @@next
+	
+@@ok:
+	call set_track
+	call get_track_song_slot
+	
+	;; get volume
+	ld a,(ix+t_vol)
+	rlca
+	rlca
+	rlca
+	rlca
+	or (ix+t_macro_vol)
+	ld e,a
+	ld d,0
+	ld hl,(psg_volume_tbl_base)
+	ld a,(psg_volume_tbl_base+2)
+	call step_ptr_ahl
+	
+	ld e,(hl)
+	ld d,0
+	ld a,(iy+ss_volume)
+	and $f0
+	or e
+	ld e,a
+	ld hl,(psg_volume_tbl_base)
+	ld a,(psg_volume_tbl_base+2)
+	call step_ptr_ahl
+	
+	ld a,(hl)
+	cpl
+	and $0f
+	ld b,a
+	ld a,(k_temp+1)
+	or b
+	or $90
+	ld (PSG),a
+	
+	
+	;;; check noise channel
+	ld a,(k_temp)
+	cp 3
+	jr nz,@@not_noise
+	
+	;; set up noise register write value
+	ld a,$e0
+	ld e,(ix+t_psg_noise)
+	
+	bit 0,e ;white noise?
+	jr z,+
+	or 4
++:	
+	bit 1,e ;locked mode?
+	jr nz,@@noise_ext
+	
+	;locked, get noise note
+	push af
+	
+	call get_effected_note
+	add a,a
+	inc a
+	ld e,a
+	ld d,0
+	ld hl,(note_octave_tbl_base)
+	ld a,(note_octave_tbl_base+2)
+	call step_ptr_ahl
+	
+	;too high?
+	pop af
+	ld e,a
+	
+	ld a,(hl)
+	cp 3
+	jr c,+
+	ld a,2
++:
+	cpl
+	dec a
+	and 3
+	or e
+	
+	jr @@set_noise
+	
+@@noise_ext:
+	or 3
+	
+@@set_noise:
+	ld hl,k_psg_prv_noise
+	cp (hl)
+	jr z,+
+	ld (hl),a
+	ld (PSG),a
++:	
+	
+	;; do we need to write period?
+	cpl
+	and 3
+	jr nz,@@next
+	
+	ld a,$40 ;set channel write index to tone2
+	ld (k_temp+1),a
+	ld a,$ff ;disable tone2 output
+	ld (k_chn_track+10+2),a
+	
+	;;; write period
+@@not_noise:
+	call get_effected_pitch
+	ld a,h ;clamp > $3ff
+	cp 4
+	jr c,+
+	ld hl,$3ff
++:		
+	ld a,(k_temp+1)
+	ld b,a
+	ld a,l
+	and $0f
+	or b
+	or $80
+	ld (PSG),a
+	.rept 4
+		srl h
+		rr l
+	.endr
+	ld a,l
+	ld (PSG),a
+	
+	
+	
+@@next:
+	ld a,(k_temp)
+	dec a
+	jp p,@psg_loop
+	
+	
+	
+	
 	
 	
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-	;; disable all note resets
+	;; acknowledge all note resets
 	ld ix,k_tracks
 	ld de,t_size
 	ld b,KN_TRACKS
@@ -2726,6 +2888,22 @@ get_note_pitch:
 	ret
 	
 	
+	
+	
+	
+	
+get_effected_note:
+	; todo this properly
+	ld a,(ix+t_note)
+	ret
+	
+	
+	
+get_effected_pitch:
+	; todo do this properly
+	ld l,(ix+t_pitch)
+	ld h,(ix+t_pitch+1)
+	ret
 	
 	
 	
