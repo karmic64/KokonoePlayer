@@ -2027,6 +2027,7 @@ kn_play:
 	
 	;get macro value
 	ld e,(iy+mac_index)
+	ld a,e
 	cp d ;is the macro over?
 	jr nz,@@@got_index
 	ld a,(k_temp+2) ;does it loop?
@@ -2438,6 +2439,44 @@ kn_play:
 	
 	
 	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; arp
+	ld a,(ix+t_arp)
+	or a
+	jr z,@@noarp
+	
+	bit SS_FLG_PT_ARP,(iy+ss_flags)
+	jr z,@@normalarp
+	ld a,(iy+ss_speed_cnt)
+	or a
+	jr nz,@@normalarp
+	;a is 0
+	ld b,a
+	jr @@setarp
+	
+@@normalarp:
+	ld a,(ix+t_arp_cnt)
+	inc a
+	cp (ix+t_arp_speed)
+	jr c,@@setarpcnt
+	
+	xor a
+	ld b,(ix+t_arp_phase)
+	inc b
+	ex af,af'
+	ld a,b
+	cp 3
+	jr c,+
+	xor a
++:	ld b,a
+	ex af,af'
+	
+@@setarp:
+	ld (ix+t_arp_phase),b
+@@setarpcnt:
+	ld (ix+t_arp_cnt),a
+@@noarp:
 	
 	
 	
