@@ -2590,6 +2590,32 @@ kn_play:
 	
 	
 	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; disable all note resets
+	ld ix,k_tracks
+	ld de,t_size
+	ld b,KN_TRACKS
+-:	res T_FLG_NOTE_RESET,(ix+t_flags)
+	add ix,de
+	djnz -
+	
+	
+	
+	
+	
 	ret
 	
 	
