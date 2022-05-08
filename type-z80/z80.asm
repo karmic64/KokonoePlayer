@@ -183,7 +183,7 @@ ss_size .db
 .enum $1400 ;this may need to be increased in the future
 
 
-k_temp dsb $10 ;general-purpose temporary storage
+k_temp dsb 8 ;general-purpose temporary storage
 k_cur_track db
 k_cur_track_ptr dw
 k_cur_song_slot db
@@ -195,6 +195,12 @@ k_cur_frame db
 
 
 k_comm_index db
+
+
+
+k_sample_active dsb 1
+k_sample_ptr dsb 3
+k_sample_rate dsb 2
 
 
 
@@ -1770,7 +1776,7 @@ kn_play:
 	
 	ld a,(k_temp)
 	cp EFF_TONEPORTA ;if there will be a toneporta, just init it
-	jr z,@@@inittargetslide
+	jr z,@@@inittoneporta
 	
 	;if there will be another slide, always reinit the note
 	or a
@@ -1852,6 +1858,10 @@ kn_play:
 	neg
 +:	add (ix+t_note)
 	jr +
+	
+@@@inittoneporta:
+	ld l,d
+	ld h,0
 	
 	;speed in hl, target note in e
 @@@inittargetslide:
@@ -2433,13 +2443,11 @@ kn_play:
 	
 @@@add:
 	;when adding, the note is hit when target < pitch
-	pop af
 	jr c,@@@hit
 	jr @@setslide
 	
 @@@sub:
 	;when subtracting the note is hit when target >= pitch
-	pop af
 	jr c,@@setslide
 	
 @@@hit:
