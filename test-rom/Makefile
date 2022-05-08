@@ -6,7 +6,7 @@ clean: kn-clean
 
 
 KN_DIR := ../
-KN_TYPE := z80
+KN_TYPE := 68k
 KN_SONG_SLOTS := 2
 KN_MODULES := ../test-mods/*
 

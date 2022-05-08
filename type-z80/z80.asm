@@ -438,6 +438,14 @@ return_main_loop:
 	
 	inc (ix+1)
 	
+	dec l
+	ld a,l
+	or h
+	jr nz,+
+	ld hl,2
+	inc (hl)	
++:	
+	
 	
 	;;; handle 68k commands
 	

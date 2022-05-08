@@ -1976,10 +1976,9 @@ kn_play::
 .fm_3_no_global:
 	
 	;always write TL, since it could be changed at any moment by t_vol
-	moveq #0,d2 ;get the tl scale value (ranges from $00-$100)
+	moveq #0,d2 ;get the tl add value (ranges from $00-$7f)
 	moveq #0,d3
 	move.b t_vol(a5),d2
-	addq.b #1,d2
 	move.b t_macro_vol(a5),d3
 	addq.b #1,d3
 	mulu.w d3,d2
@@ -1987,18 +1986,18 @@ kn_play::
 	addq.w #1,d3
 	mulu.w d3,d2
 	lsr.l #7,d2
-	lsr.l #7,d2
+	lsr.l #8,d2
 	
-	move.w #$7f,d3
+	move.b #$7f,d3
+	eor.b d3,d2
 	
 	move.l d6,d0
 	ori.b #$40,d0
 	moveq #0,d1
 	move.b t_fm+fm_40(a5,d7),d1
-	eor.b d3,d1
-	mulu.w d2,d1
-	lsr.w #8,d1
-	eor.b d3,d1
+	add.b d2,d1
+	bpl .fm_3_no_tl
+	move.b d3,d1
 .fm_3_no_tl
 	fm_reg_1 d0
 	fm_write_1 d1
@@ -2373,10 +2372,9 @@ kn_play::
 	ori.b #$40,d0
 	lea t_fm+fm_40(a5),a0
 	
-	moveq #0,d2 ;get the tl scale value (ranges from $00-$100)
+	moveq #0,d2 ;get the tl add value (ranges from $00-$7f)
 	moveq #0,d3
 	move.b t_vol(a5),d2
-	addq.b #1,d2
 	move.b t_macro_vol(a5),d3
 	addq.b #1,d3
 	mulu.w d3,d2
@@ -2384,22 +2382,22 @@ kn_play::
 	addq.w #1,d3
 	mulu.w d3,d2
 	lsr.l #7,d2
-	lsr.l #7,d2
+	lsr.l #8,d2
+	
+	move.b #$7f,d4
+	eor.b d4,d2
 	
 	move.b t_fm+fm_b0(a5),d3 ;then get algorithm
 	andi.b #$07,d3
-	
-	move.b #$7f,d4
 	
 	;tl 1
 	moveq #0,d1
 	move.b (a0)+,d1
 	cmpi.b #7,d3
 	blo .fm_no_tl1
-	eor.b d4,d1
-	mulu.w d2,d1
-	lsr.w #8,d1
-	eor.b d4,d1
+	add.b d2,d1
+	bpl .fm_no_tl1
+	move.b d4,d1
 .fm_no_tl1
 	fm_reg d0
 	fm_write d1
@@ -2410,10 +2408,9 @@ kn_play::
 	move.b (a0)+,d1
 	cmpi.b #5,d3
 	blo .fm_no_tl3
-	eor.b d4,d1
-	mulu.w d2,d1
-	lsr.w #8,d1
-	eor.b d4,d1
+	add.b d2,d1
+	bpl .fm_no_tl3
+	move.b d4,d1
 .fm_no_tl3
 	fm_reg d0
 	fm_write d1
@@ -2424,10 +2421,9 @@ kn_play::
 	move.b (a0)+,d1
 	cmpi.b #4,d3
 	blo .fm_no_tl2
-	eor.b d4,d1
-	mulu.w d2,d1
-	lsr.w #8,d1
-	eor.b d4,d1
+	add.b d2,d1
+	bpl .fm_no_tl2
+	move.b d4,d1
 .fm_no_tl2
 	fm_reg d0
 	fm_write d1
@@ -2436,10 +2432,9 @@ kn_play::
 	;tl 4
 	moveq #0,d1
 	move.b (a0)+,d1
-	eor.b d4,d1
-	mulu.w d2,d1
-	lsr.w #8,d1
-	eor.b d4,d1
+	add.b d2,d1
+	bpl .fm_no_tl4
+	move.b d4,d1
 .fm_no_tl4
 	fm_reg d0
 	fm_write d1
