@@ -422,9 +422,13 @@ return_main_loop:
 	;;; wait for next frame
 	ld ix,k_frame_cnt
 	
+	ld hl,0
+	
 	ld a,(ix+1)
--:	cp (ix+0)
+-:	inc hl
+	cp (ix+0)
 	jr z,-
+	ld (0),hl
 	
 	inc (ix+1)
 	
@@ -2892,10 +2896,47 @@ get_note_pitch:
 	
 	
 	
+	
+	
+	; returns note in a
 get_effected_note:
-	; todo this properly
-	ld a,(ix+t_note)
+	push bc
+	
+	;if the macro is arpeggiating, use that as the base note
+	ld a,$ff
+	ld b,(ix+t_macro_arp)
+	cp b
+	jr nz,+
+	;otherwise use the pattern note
+	ld b,(ix+t_note)
++:
+	
+	;pattern arp effect?
+	ld a,(ix+t_arp_phase)
+	or a
+	jr z,@got
+	ld c,a
+	ld a,(ix+t_arp)
+	dec c
+	jr nz,@got2
+	rrca
+	rrca
+	rrca
+	rrca
+@got2:
+	and $0f
+@got:
+	add a,b
+	
+	pop bc
 	ret
+	
+	
+	
+	
+	
+	
+	
 	
 	
 	
