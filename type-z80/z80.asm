@@ -180,7 +180,7 @@ ss_size .db
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; private variables
-.enum $1000 ;this may need to be increased in the future
+.enum $1400 ;this may need to be increased in the future
 
 
 k_temp dsb $10 ;general-purpose temporary storage
@@ -557,40 +557,49 @@ step_ptr:
 	
 	
 	
-	;bc * de = dehl
-mulu:
-	ld hl,0
-	jr muls@mulbpos+1
+	
+	
 	
 	;signed bc * de = dehl
-muls:
-  ld hl,0
-
-  bit 7,d
-  jr z,@muldpos
-  sbc hl,bc
-@muldpos:
-
-  or b
-  jp p,@mulbpos
-  sbc hl,de
-@mulbpos:
-
-  ld a,16
-  
-@loop:
-  add hl,hl
-  rl e
-  rl d
-  jr nc,+
-  add hl,bc
-  jr nc,+
-  inc de
-+:
-  dec a
-  jr nz,@loop
-  
-  ret
+muls_bc_de:
+	xor a
+	ld h,a
+	ld l,a
+	
+	bit 7,d
+	jr z,+
+	sbc hl,bc
++:	
+	or b
+	jp p,+
+	sbc hl,de
++:	
+	
+@main:
+	ld a,16
+-:	add hl,hl
+	rl e
+	rl d
+	jr nc,+
+	add hl,bc
+	jr nc,+
+	inc de
++:	dec a
+	jr nz,-
+	
+	ret
+	
+	
+	;bc * de = dehl
+mulu_bc_de:
+	ld hl,0
+	jr muls_bc_de@main
+	
+	
+	
+	
+	
+	
 	
 	
 	
@@ -811,13 +820,11 @@ kn_init:
 	push hl
 	ld hl,(k_temp+2)
 	ld a,(k_temp+4)
+	ld de,(k_temp+5)
 	ld (ix+t_seq_base),l
 	ld (ix+t_seq_base+1),h
 	ld (ix+t_seq_base+2),a
-	ex de,hl ;now step
-	ld hl,(k_temp+5)
-	ex de,hl
-	call step_ptr
+	call step_ptr ;and step
 	ld (k_temp+2),hl
 	ld a,c
 	ld (k_temp+4),a
@@ -1729,8 +1736,6 @@ kn_play:
 	
 	
 	;; get note
-	push bc
-	push hl
 	and $1f
 	cp $1e
 	jr c,@@@nonoteoff
@@ -1744,7 +1749,7 @@ kn_play:
 	dec a
 	ld (ix+t_slide_target),a
 	
-	jp @@@afternote
+	jp @@aftersongdata
 	
 	
 @@@nonoteoff:
@@ -1755,6 +1760,9 @@ kn_play:
 @@@nolongnote:
 	add (ix+t_patt_base_note)
 @@@gotnote:
+	push bc
+	push hl
+	
 	ld e,a ;save note in e
 	
 	ld a,(k_temp+1) ;save pitch effect param in d
@@ -1808,7 +1816,13 @@ kn_play:
 +:	
 	
 	
+	jr +
 @@@blanknote:
+	
+	push bc
+	push hl
++:
+	
 	
 	;any other pitch effects?
 	;(row note is in e, param is in d)
@@ -1902,15 +1916,17 @@ kn_play:
 	
 	
 @@@afternote:
+	
 	pop hl
 	pop bc
 	
 	
 @@aftersongdata:
-	
 	ld (ix+t_patt_ptr),l
 	ld (ix+t_patt_ptr+1),h
 	ld (ix+t_patt_ptr+2),c
+	
+	
 	
 @@nonewsongdata:
 	
@@ -2052,6 +2068,8 @@ kn_play:
 	cp $20
 	jp c,@@@not_fm_op
 	
+	set T_FLG_FM_UPDATE,(ix+t_flags)
+	
 	;add op number to ix
 	ld c,a
 	and 3
@@ -2062,6 +2080,7 @@ kn_play:
 	;dispatch
 	ld hl,@@@fm_op_tbl
 	ld a,c
+	sub $20
 	and $fc
 	rrca
 	ld e,a
@@ -2185,10 +2204,14 @@ kn_play:
 	
 @@@after_fm_op:
 	ld ix,(k_cur_track_ptr)
-	jr @@next_macro
+	jp @@next_macro
 	
 	
 @@@not_fm_op:
+	cp 4
+	jr c,+
+	set T_FLG_FM_UPDATE,(ix+t_flags)
++:	
 	
 	;dispatch
 	ld l,a
@@ -2814,8 +2837,7 @@ get_note_pitch:
 	rst get_byte ;octave
 	ld b,a
 	
-	rst get_byte ;note
-	ld l,a
+	ld l,(hl) ;note
 	ld h,0
 	ld de,fm_fnum_tbl
 	add hl,hl
@@ -2882,8 +2904,7 @@ get_note_pitch:
 	
 	rst get_byte
 	ld d,a
-	rst get_byte
-	ld e,a
+	ld e,(hl)
 	ex de,hl
 	
 @exit:
@@ -2939,11 +2960,144 @@ get_effected_note:
 	
 	
 	
-	
+	; returns pitch in hl
 get_effected_pitch:
-	; todo do this properly
+	push bc
+	push de
+	
+	;;;;; get total finetune in hl
+	;;;;; every 256 finetune units is a semitone up
+	
+	ld a,(ix+t_finetune)
+	ld l,a
+	rlca
+	sbc a,a
+	ld h,a
+	bit SS_FLG_LINEAR_PITCH,(iy+ss_flags)
+	jr z,+
+	add hl,hl
++:	
+	
+	;;; if vibrato is on, add it to the finetune
+	ld a,(ix+t_vib)
+	or a
+	jr z,@novib
+	
+	push hl
+	
+	ld a,(ix+t_vib_phase)
+	and $3f
+	add a,a
+	ld e,a
+	ld d,0
+	ld hl,(vib_tbl_base)
+	ld a,(vib_tbl_base+2)
+	call step_ptr_ahl
+	rst get_byte
+	ld d,a
+	ld e,(hl)
+	
+	;; check vibrato mode
+	ld a,(ix+t_vib_mode)
+	or a
+	jr z,@scalevib
+	dec a
+	jr nz,@vibdown
+	;mode 1, only up
+	bit 7,d
+	jr z,@scalevib
+	jr @novib2
+	
+	;mode 2, only down
+@vibdown:
+	bit 7,d
+	jr z,@novib2
+	
+	
+	;; scale vibrato based on depths
+@scalevib:
+	ld a,d
+	or e
+	jr z,@novib2
+	
+	push de
+	
+	ld l,(ix+t_vib_fine)
+	ld h,0
+	.rept 4
+		add hl,hl
+	.endr
+	ld a,(ix+t_vib)
+	and $0f
+	or l
+	ld l,a
+	add hl,hl
+	ex de,hl
+	
+	ld hl,(vib_scale_tbl_base)
+	ld a,(vib_scale_tbl_base+2)
+	call step_ptr_ahl
+	rst get_byte
+	ld b,a
+	ld c,(hl)
+	pop de
+	call muls_bc_de
+	ld d,e
+	ld e,h
+	
+	bit SS_FLG_LINEAR_PITCH,(iy+ss_flags)
+	jr nz,+
+	.rept 3
+		sra d
+		rr e
+	.endr
++:
+	
+	
+	pop hl
+	add hl,de
+	jr @novib
+	
+@novib2:
+	pop hl
+	
+@novib:
+	
+	
+	;;;;; get base pitch in hl
+	;;;;; (and move finetune to de)
+	ex de,hl
+	
+	;first, check if we use the current pitch or the arpeggio
+	ld a,(ix+t_slide) ;if sliding, always use current pitch
+	or (ix+t_slide+1)
+	jr nz,@curpitch
+	ld a,(ix+t_macro_arp) ;if the macro is arpeggiating, use arpeggio
+	inc a
+	jr nz,@pitcharp
+	ld a,(ix+t_arp) ;if the pattern arp effect is inactive use the current pitch
+	or a
+	jr z,@curpitch
+	
+@pitcharp:
+	;get arpeggio note pitch
+	call get_effected_note
+	call get_note_pitch
+	jr @gotpitch
+	
+@curpitch:
 	ld l,(ix+t_pitch)
 	ld h,(ix+t_pitch+1)
+	
+@gotpitch:
+	
+	
+	
+	
+	
+@exit:
+	pop de
+	pop bc
 	ret
 	
 	
