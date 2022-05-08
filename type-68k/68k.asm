@@ -22,9 +22,8 @@ KN_TRACKS = KN_SONG_SLOTS*KN_SONG_SLOT_TRACKS
 	
 	; macro
 	clrso
+mac_index so.b 0 ;index is the unused upper byte of the pointer
 mac_base so.l 1
-mac_index so.b 1
-	so.b 1
 mac_size = __SO
 	
 	
@@ -771,9 +770,8 @@ kn_play::
 	move.l (a1)+,(a2)+
 	bra .nextinstrmac
 .instrmacclear:
-	move.l #0,(a2)+
+	clr.l (a2)+
 .nextinstrmac
-	move.w #0,(a2)+
 	addq.b #1,d3
 	cmpi.b #MACRO_SLOTS,d3
 	bne .instrmacrosetloop
@@ -1323,8 +1321,9 @@ kn_play::
 	
 .macro_loop:
 	movea.l (a3)+,a0
-	moveq #0,d0
-	move.w (a3)+,d0
+	move.l a0,d0
+	move.w #24,d1
+	lsr.l d1,d0
 	
 	move.l a0,d1 ;pointer is null?
 	beq .next_macro
@@ -1337,8 +1336,8 @@ kn_play::
 .do_macro
 	addq.l #4,a0 ;get actual macro value
 	move.b (a0,d0),d1
-	addq.w #1,d0 ;step index
-	move.w d0,-2(a3)
+	addq.b #1,d0 ;step index
+	move.b d0,-4(a3)
 	moveq #0,d0 ;get macro type
 	move.b -4(a0),d0
 	
