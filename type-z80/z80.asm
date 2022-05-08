@@ -351,10 +351,27 @@ set_bank:
 	ld (hl),a
 	rrca
 	ld (hl),a
-	ld (hl),0
-	pop hl
-	pop af
+	jr set_bank_exit
+	
+	
+	
+	;write byte a to ym register b
+	;(assumes hl' is $4000, bc' is the register and de' is the data)
+	.orga $28
+write_fm:
+	ex af,af'
+	ld a,b
+	exx
+	ld (bc),a
+	
+-:	bit 7,(hl)
+	jr nz,-
+	
+	ex af,af'
+	ld (de),a
+	exx
 	ret
+	
 	
 	
 	
@@ -377,6 +394,17 @@ set_bank:
 	
 	ei
 	ret
+	
+	
+	
+	;;;;;;
+set_bank_exit:
+	ld (hl),0
+	pop hl
+	pop af
+	ret
+	
+	
 	
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;; reset
@@ -572,6 +600,48 @@ step_ptr:
 	
 	
 	
+	
+	
+	;h * e = hl
+mulu_h_e:
+	ld d,0
+	sla h
+	sbc a,a
+	and e
+	ld l,a
+	
+	.rept 7
+	add hl,hl
+	jr nc,+
+	add hl,de
++:	.endr
+	
+	ret
+	
+	
+	
+	
+	;de * a = ahl
+mulu_de_a:
+	ld c,0
+	ld h,c
+	ld l,h
+	
+	add a,a
+	jr nc,+
+	ld h,d
+	ld l,e
++:
+	
+	.rept 7
+	add hl,hl
+	rla
+	jr nc,+
+	add hl,de
+	adc a,c
++:	.endr
+	
+	ret
 	
 	
 	;signed bc * de = dehl
@@ -1992,7 +2062,6 @@ kn_play:
 	;;;;;;;;;;;;;;;;;;;;;;;;;;;
 	;; handle note resets
 	bit T_FLG_NOTE_RESET,(ix+t_flags)
-	res T_FLG_NOTE_RESET,(ix+t_flags)
 	jr z,@@nonotereset
 	
 @@notereset:
@@ -2630,6 +2699,333 @@ kn_play:
 	cp KN_TRACKS
 	jp c,@trackloop
 	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+	;; fm output
+	
+	;set up part registers
+	ld b,>FM1REG
+	ld d,b
+	ld h,b
+	ld c,<FM1REG
+	ld l,c
+	ld e,<FM1DATA
+	exx
+	
+	
+	;lfo
+	ld b,$22
+	ld a,(k_fm_lfo)
+	rst write_fm
+	
+	
+	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;; extd.chn3 out
+	
+	ld b,$27
+	
+	;;; first see if we use it at all
+	
+	;if all extd.chn3 tracks are unoccupied, don't
+	ld hl,k_chn_track+6
+	ld a,(hl)
+	inc hl
+	and (hl)
+	inc hl
+	and (hl)
+	inc hl
+	and (hl)
+	jp m,@no_fm_3_out
+	
+	;if the std.chn3 track is higher than any extd.chn3 track, do std.chn3
+	ld a,(k_chn_track+2)
+	or a
+	jp m,@do_fm_3_out
+	ld hl,k_chn_track+6
+	cp (hl)
+	jp nc,@no_fm_3_out
+	inc hl
+	cp (hl)
+	jp nc,@no_fm_3_out
+	inc hl
+	cp (hl)
+	jp nc,@no_fm_3_out
+	inc hl
+	cp (hl)
+	jp nc,@no_fm_3_out
+	
+@do_fm_3_out:
+	;ok, turn on extd.chn3
+	ld a,$40
+	rst write_fm
+	
+	ld a,$fe
+	ld (k_chn_track+2),a
+	inc a
+	ld (k_fm_extd_chn3),a
+	ld (k_prv_fm_track+2),a
+	
+	
+	ld a,3 ;operator count
+@fm_3_loop:
+	ld (k_temp),a
+	ld e,a
+	ld d,0
+	
+	;get operator index
+	or a ;operator -> register order
+	jr z,+
+	cp 3
+	jr z,+
+	xor 3
++:	ld b,a
+	add a,a
+	add a,a
+	add a,2
+	ld (k_temp+1),a
+	;get keyon register or mask
+	ld a,$08
+	inc b
+-:	add a,a
+	djnz -
+	ld (k_temp+2),a
+	
+	;check if track is on
+	ld hl,k_chn_track+6
+	add hl,de
+	ld a,(hl)
+	or a
+	ld hl,k_prv_fm_track+6 ;this operation does not affect sign flag
+	add hl,de
+	jp p,@@go
+	
+@@kill:
+	ld c,$ff ;set channel as killed
+	ld (hl),c
+	
+	;set TL to $7f
+	ld a,(k_temp+1)
+	ld d,a
+	or $40
+	ld b,a
+	ld a,c
+	rst write_fm
+	
+	;set RR to $0f
+	ld a,d
+	or $80
+	ld b,a
+	ld a,c
+	rst write_fm
+	
+	;keyoff
+	ld b,$28
+	ld a,(k_temp+2)
+	cpl
+	ld hl,k_fm_prv_chn3_keyon
+	and (hl)
+	ld (hl),a
+	rst write_fm
+	jp @@next
+	
+	
+@@go:
+	push hl
+	call set_track
+	call get_track_song_slot
+	pop hl
+	
+	;; if the track of the channel has changed and there is no note reset yet, kill the channel
+	ld a,(k_cur_track)
+	cp (hl)
+	jr z,+
+	
+	bit T_FLG_NOTE_RESET,(ix+t_flags)
+	jr z,@@kill
+	
+	set T_FLG_FM_UPDATE,(ix+t_flags)
+	ld (hl),a
++:	
+	
+	
+	;; if the note will be reset, keyoff first
+	bit T_FLG_NOTE_RESET,(ix+t_flags)
+	jr z,+
+	ld b,$28
+	ld hl,k_fm_prv_chn3_keyon
+	ld a,(k_temp+2)
+	cpl
+	and (hl)
+	ld (hl),a
+	rst write_fm
++:	
+	
+	
+	
+	;; write fm patch for this operator
+	bit T_FLG_FM_UPDATE,(ix+t_flags)
+	jr z,@@no_patch
+	res T_FLG_FM_UPDATE,(ix+t_flags)
+	
+	;get pointer to fm patch + operator in hl
+	ld a,(k_temp)
+	ld l,a
+	ld h,0
+	ld d,ixh
+	ld e,ixl
+	add hl,de
+	ld de,t_fm
+	add hl,de
+	ld de,4
+	
+	;get register base in b
+	ld a,(k_temp+1)
+	or $30
+	ld b,a
+	ld c,$10
+	
+	;mul/dt
+	ld a,(hl)
+	rst write_fm
+	add hl,de
+	add hl,de
+	ld a,b
+	add c
+	add c
+	
+	;everything that isn't TL
+-:	ld b,a
+	ld a,(hl)
+	rst write_fm
+	add hl,de
+	ld a,b
+	add c
+	cp $a0
+	jr c,-
+	
+	
+@@no_patch:
+	
+	;; only write global fm params for the highest operator
+	ld hl,k_fm_extd_chn3
+	ld a,(hl)
+	or a
+	jp p,+
+	
+	ld (hl),0
+	
+	ld b,$b2
+	ld a,(ix+t_fm+fm_b0)
+	rst write_fm
+	
+	ld b,$b6
+	ld a,(ix+t_fm+fm_b4)
+	or (ix+t_pan)
+	rst write_fm
+	
++:	
+	
+	;; always write TL, since it could be changed at any moment by t_vol
+	ld h,(ix+t_vol)
+	ld e,(ix+t_macro_vol)
+	inc e
+	call mulu_h_e
+	ex de,hl
+	ld a,(iy+ss_volume)
+	call mulu_de_a
+	sla h
+	rla
+	
+	ld hl,k_temp
+	ld e,(hl)
+	ld d,0
+	add ix,de
+	
+	ld e,$7f
+	xor e
+	ld d,a
+	
+	ld a,(k_temp+1)
+	or $40
+	ld b,a
+	
+	ld a,(ix+t_fm+fm_40)
+	add d
+	jp p,+
+	ld a,e
++:	rst write_fm
+	
+	ld ix,(k_cur_track_ptr)
+	
+	
+	
+	;; write frequency
+	call get_effected_pitch
+	ex de,hl
+	
+	ld hl,fm_chn3_freq_reg_tbl
+	ld a,(k_temp)
+	ld c,a
+	ld b,0
+	add hl,bc
+	ld b,(hl)
+	ld a,d
+	rst write_fm
+	ld a,b
+	sub 4
+	ld b,a
+	ld a,e
+	rst write_fm
+	
+	
+	
+	;; write key state
+	ld hl,k_fm_prv_chn3_keyon
+	ld a,(k_temp+2)
+	bit T_FLG_KEYOFF,(ix+t_flags)
+	jr nz,@@keyedoff
+	
+	or (hl)
+	jr @@setkey
+	
+@@keyedoff:
+	cpl
+	and (hl)
+@@setkey:
+	ld (hl),a
+	ld b,$28
+	rst write_fm
+	
+	
+	
+@@next:
+	ld a,(k_temp)
+	dec a
+	jp p,@fm_3_loop
+	
+	
+	
+	
+	
+	jr @fm_normal_out
+	
+@no_fm_3_out:
+	
+	;turn off extd.chn3
+	xor a
+	rst write_fm
+	
+	
+@fm_normal_out:
 	
 	
 	
