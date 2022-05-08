@@ -1746,6 +1746,11 @@ kn_play:
 @@@setdur:
 	ld (ix+t_dur_cnt),a
 	
+	
+	
+	ld a,(k_temp+1) ;save pitch effect param in d
+	ld d,a
+	
 	pop af
 	
 	
@@ -1778,9 +1783,6 @@ kn_play:
 	push hl
 	
 	ld e,a ;save note in e
-	
-	ld a,(k_temp+1) ;save pitch effect param in d
-	ld d,a
 	
 	ld a,(k_temp)
 	cp EFF_TONEPORTA ;if there will be a toneporta, just init it
