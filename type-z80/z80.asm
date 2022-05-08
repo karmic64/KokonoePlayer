@@ -3092,7 +3092,100 @@ get_effected_pitch:
 @gotpitch:
 	
 	
+	;;;;; apply finetune to pitch
 	
+	ld a,(ix+t_chn)
+	cp 10
+	bit SS_FLG_LINEAR_PITCH,(iy+ss_flags)
+	jr z,@no_linear
+	
+@linear:
+	;;; linear: pitch is in hl, semitone difference is in d, finetune is in e
+	jr nc,@@psg
+	
+@@fm:
+	;; apply finetune to fm
+	;TODO
+	jr @exit
+	
+	
+@@psg:
+	;; apply finetune to psg
+	
+	; if needed, fix semitone
+	ld a,d
+	or a
+	jr z,+
+	
+	push de
+	
+	push hl
+	neg
+	add a,5*12
+	ld l,a
+	ld h,0
+	add hl,hl
+	ex de,hl
+	ld hl,(semitune_tbl_base)
+	ld a,(semitune_tbl_base+2)
+	call step_ptr_ahl
+	rst get_byte
+	ld b,a
+	ld c,(hl)
+	pop de
+	call mulu_bc_de
+	ld l,h
+	ld h,e
+	ld a,d
+	.rept 3
+		rrca
+		rr h
+		rr l
+	.endr
+	
+	pop de
+	
++:	
+	; do any finetuning
+	ld a,e
+	or a
+	jr z,@exit
+	
+	push hl
+	ld d,0
+	ex de,hl
+	add hl,hl
+	ex de,hl
+	ld hl,(psg_finetune_tbl_base)
+	ld a,(psg_finetune_tbl_base+2)
+	call step_ptr_ahl
+	rst get_byte
+	ld b,a
+	ld c,(hl)
+	pop de
+	call mulu_bc_de
+	ex de,hl
+	
+	jr @exit
+	
+	
+	
+	
+	
+@no_linear:
+	;;; register: pitch is in hl, register add value is in de
+	jr nc,@@psg
+	
+@@fm:
+	;; apply finetune to fm
+	;TODO
+	jr @exit
+	
+	
+@@psg:
+	;; apply finetune to psg
+	xor a
+	sbc hl,de
 	
 	
 @exit:
