@@ -200,6 +200,7 @@ k_comm_index db
 
 k_sample_active dsb 1
 k_sample_ptr dsb 3
+k_sample_loop dsb 3
 k_sample_rate dsb 2
 
 
@@ -770,6 +771,27 @@ get_song_slot_track:
 	jr load_track_from_table
 	
 	
+	
+	
+	
+	
+	;write byte a to fm reg b, part 1
+	;assumes hl' is $4000
+write_fm_1:
+	ex af,af'
+	ld a,b
+	exx
+	ld (hl),a
+	
+-:	bit 7,(hl)
+	jr nz,-
+	
+	ex af,af'
+	inc l
+	ld (hl),a
+	dec l
+	exx
+	ret
 	
 	
 	
@@ -3032,6 +3054,345 @@ kn_play:
 	
 	
 	
+	;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; standard fm out
+	exx
+	ld c,<FM2REG
+	ld e,<FM2DATA
+	exx
+	
+	
+	
+	ld a,5
+@fm_loop:
+	ld (k_temp),a ;channel number
+	ld e,a
+	ld d,0
+	
+	;get channel register offset in b, and keyon offset in c
+	ld b,a
+	ld c,a
+	cp 3
+	jr c,+
+	sub 3
+	ld b,a
+	inc c
++:
+	ld hl,k_temp+1
+	ld (hl),b
+	inc hl
+	ld (hl),c
+	
+	;check if channel occupied
+	ld hl,k_chn_track
+	add hl,de
+	ld a,(hl)
+	or a
+	ld hl,k_prv_fm_track ;this operation does not affect sign flag
+	add hl,de
+	jp p,@@go
+	cp $fe ;if this channel was disabled by extd.chn3, do nothing
+	jp z,@@next
+	
+@@kill:
+	ld c,$ff ;mark channel as killed
+	ld (hl),c
+	
+	;set RRs to $f
+	ld a,$80
+	or b
+-:	ld b,a
+	ld a,c
+	rst write_fm
+	ld a,b
+	add 4
+	cp $90
+	jr c,-
+	
+	;key off
+	ld a,(k_temp+2)
+	ld b,$28
+	call write_fm_1
+	
+	;disable dac
+	ld a,(k_temp)
+	sub 5
+	jr nz,+
+	ld (k_sample_active),a
++:
+	jp @@next
+	
+	
+@@go:
+	push hl
+	call set_track
+	call get_track_song_slot
+	pop hl
+	
+	;; if the track of the channel has changed and there is no note reset yet, kill the channel
+	ld a,(k_cur_track)
+	cp (hl)
+	jr z,+
+	bit T_FLG_NOTE_RESET,(ix+t_flags)
+	jr z,@@kill
+	
+	set T_FLG_FM_UPDATE,(ix+t_flags)
+	ld (hl),a
++:	
+	
+	
+	;reset prv chn3
+	ld a,(k_temp)
+	sub 2
+	jr nz,+
+	dec a
+	ld hl,k_prv_fm_track+6
+	ld (hl),a
+	inc hl
+	ld (hl),a
+	inc hl
+	ld (hl),a
+	inc hl
+	ld (hl),a
++:
+	
+	
+	
+	;;; handle dac channel
+	ld a,(k_temp)
+	cp 5
+	jp nz,@@no_dac
+	
+	ld a,(ix+t_instr_sample_type)
+	or a
+	jp nz,@@instr_dac
+	
+	ld a,(ix+t_dac_mode)
+	or a
+	jp z,@@disable_dac
+
+
+	;write panning
+	ld b,$b6
+	ld a,(ix+t_pan)
+	rst write_fm
+	
+	;if there is a new note, init the sample
+	bit T_FLG_NOTE_RESET,(ix+t_flags)
+	jp z,@@next
+	
+	ld a,1
+	ld (k_sample_active),a
+	
+	; get sample index ((note % 12) + (samplebank * 12)) * 2 in de
+	ld l,(ix+t_note) ;get note % 12 in a
+	ld h,0
+	add hl,hl
+	inc hl
+	ex de,hl
+	ld hl,(note_octave_tbl_base)
+	ld a,(note_octave_tbl_base+2)
+	call step_ptr_ahl
+	ld a,(hl)
+	
+	ld l,(ix+t_smpl_bank) ;get samplebank * 12 in hl
+	ld e,l
+	ld h,0
+	ld d,h
+	add hl,hl
+	add hl,de
+	add hl,hl
+	add hl,hl
+	
+	ld e,a ;add them
+	add hl,de
+	add hl,hl
+	ex de,hl
+	
+	;get sample id
+	ld l,(iy+ss_sample_map)
+	ld h,(iy+ss_sample_map+1)
+	ld c,(iy+ss_sample_map+2)
+	call step_ptr
+	rst get_byte
+	ld d,a
+	ld e,(hl)
+	
+	;get sample pointer
+	ld hl,(sample_tbl_base)
+	ld a,(sample_tbl_base+2)
+	call indexed_read_68k_ptr
+	
+	;now get sample info
+	rst get_byte ;skip upper byte of loop size
+	rst get_byte ;get sample loop size in ade
+	push af
+	rst get_byte
+	ld d,a
+	rst get_byte
+	ld e,a
+	
+	rst get_byte ;get sample rate
+	ld (k_sample_rate+1),a
+	rst get_byte
+	ld (k_sample_rate),a
+	
+	rst get_byte ;skip center rate
+	rst get_byte
+	
+@@get_sample_ptrs:
+	;sample base pointer is now in chl, loop length is in ade
+	ld a,l
+	ld (k_sample_ptr),a
+	ld a,h
+	ld (k_sample_ptr+1),a
+	ld a,c
+	ld (k_sample_ptr+2),a
+	pop af
+	or a
+	jp m,@@@noloop
+	
+	;get loop pointer in chl
+	sla d ;shift out the bank number
+	rl a
+	sla h
+	rl c
+	
+	srl d
+	srl h
+	
+	add hl,de ;add the actual pointer portion
+	bit 7,h ;if there was an overflow, increment the bank
+	jr z,+
+	inc c
++:	
+	add c ;add the banks
+	ld c,a
+	
+	
+	;set loop pointer
+@@@setloop:
+	set 7,h
+	ex de,hl
+	ld hl,k_sample_loop
+	ld e,(hl)
+	inc hl
+	ld d,(hl)
+	inc hl
+	ld c,(hl)
+	
+	
+	jp @@next
+	
+@@@noloop:
+	xor a
+	ld hl,k_sample_loop
+	ld (hl),a
+	inc hl
+	ld (hl),a
+	inc hl
+	ld (hl),a
+	
+	jp @@next
+	
+	
+@@instr_dac:
+	
+	;; do instrument melodic sample
+	
+	;write panning
+	ld b,$b6
+	ld a,(ix+t_pan)
+	rst write_fm
+	
+	
+	;get sample pointer
+	ld l,(ix+t_instr_sample)
+	ld h,(ix+t_instr_sample+1)
+	ld c,(ix+t_instr_sample+2)
+	rst set_bank
+	
+	;now get sample info
+	rst get_byte ;skip upper byte of loop size
+	rst get_byte ;get sample loop size in ade
+	push af
+	rst get_byte
+	ld d,a
+	rst get_byte
+	ld e,a
+	push de
+	
+	rst get_byte ;skip sample rate
+	rst get_byte
+	
+	rst get_byte ;get center rate
+	ld d,a
+	rst get_byte
+	ld e,a
+	
+	push bc ;get actual sample rate of the note
+	push hl
+	
+	push de
+	call get_effected_note
+	sub 12*4
+	ld l,a
+	ld h,0
+	add hl,hl
+	ex de,hl
+	ld hl,(semitune_tbl_base)
+	ld a,(semitune_tbl_base+2)
+	call step_ptr_ahl
+	
+	rst get_byte
+	ld d,a
+	ld e,(hl)
+	pop bc
+	call mulu_bc_de
+	ld a,d
+	.rept 3
+		rra
+		rr e
+		rr h
+	.endr
+	ld a,e
+	ld (k_sample_rate+1),a
+	ld a,h
+	ld (k_sample_rate),a
+	
+	pop hl
+	pop bc
+	
+	pop de
+	pop af
+	jp @@get_sample_ptrs
+	
+	
+@@disable_dac:
+	ld a,0
+	ld (k_sample_active),a
+	
+@@no_dac:
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+@@next:
+	ld a,(k_temp)
+	cp 3 ;do we need to switch parts?
+	jr nz,+
+	exx
+	ld c,<FM1REG
+	ld e,<FM1DATA
+	exx
++:
+	dec a
+	jp p,@fm_loop
 	
 	
 	
