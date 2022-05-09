@@ -1969,8 +1969,8 @@ kn_play:
 	;speed in hl, target note in e
 @@@inittargetslide:
 	ld a,e
-	ld (ix+t_slide_target),a
-+:	
++:	ld (ix+t_slide_target),a
+
 	push hl
 	call get_note_pitch
 	pop de
