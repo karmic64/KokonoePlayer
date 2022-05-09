@@ -582,6 +582,8 @@ return_main_loop:
 	
 	;;;;;;;;;;;;;;;;;;;;;;;;;; misc routines
 	
+step_ptr_e_ahl:
+	ld d,0
 step_ptr_ahl:
 	ld c,a
 	;add de to banked pointer chl, then set the bank
@@ -3081,20 +3083,18 @@ kn_play:
 	rlca
 	or (ix+t_macro_vol)
 	ld e,a
-	ld d,0
 	ld hl,(psg_volume_tbl_base)
 	ld a,(psg_volume_tbl_base+2)
-	call step_ptr_ahl
+	call step_ptr_e_ahl
 	
 	ld e,(hl)
-	ld d,0
 	ld a,(iy+ss_volume)
 	and $f0
 	or e
 	ld e,a
 	ld hl,(psg_volume_tbl_base)
 	ld a,(psg_volume_tbl_base+2)
-	call step_ptr_ahl
+	call step_ptr_e_ahl
 	
 	ld a,(hl)
 	cpl
@@ -3129,10 +3129,9 @@ kn_play:
 	add a,a
 	inc a
 	ld e,a
-	ld d,0
 	ld hl,(note_octave_tbl_base)
 	ld a,(note_octave_tbl_base+2)
-	call step_ptr_ahl
+	call step_ptr_e_ahl
 	
 	;too high?
 	pop af
@@ -3403,10 +3402,9 @@ get_effected_pitch:
 	and $3f
 	add a,a
 	ld e,a
-	ld d,0
 	ld hl,(vib_tbl_base)
 	ld a,(vib_tbl_base+2)
-	call step_ptr_ahl
+	call step_ptr_e_ahl
 	rst get_byte
 	ld d,a
 	ld e,(hl)
