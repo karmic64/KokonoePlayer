@@ -359,7 +359,7 @@ set_bank:
 	;write byte a to ym register b
 	;(assumes hl' is $4000, bc' is the register and de' is the data)
 	.orga $28
-write_fm:
+fm_write:
 	ex af,af'
 	ld a,b
 	exx
@@ -777,7 +777,7 @@ get_song_slot_track:
 	
 	;write byte a to fm reg b, part 1
 	;assumes hl' is $4000
-write_fm_1:
+fm_write_1:
 	ex af,af'
 	ld a,b
 	exx
@@ -2749,7 +2749,7 @@ kn_play:
 	;lfo
 	ld b,$22
 	ld a,(k_fm_lfo)
-	rst write_fm
+	rst fm_write
 	
 	
 	
@@ -2790,7 +2790,7 @@ kn_play:
 @do_fm_3_out:
 	;ok, turn on extd.chn3
 	ld a,$40
-	rst write_fm
+	rst fm_write
 	
 	ld a,$fe
 	ld (k_chn_track+2),a
@@ -2842,14 +2842,14 @@ kn_play:
 	or $40
 	ld b,a
 	ld a,c
-	rst write_fm
+	rst fm_write
 	
 	;set RR to $0f
 	ld a,d
 	or $80
 	ld b,a
 	ld a,c
-	rst write_fm
+	rst fm_write
 	
 	;keyoff
 	ld b,$28
@@ -2858,7 +2858,7 @@ kn_play:
 	ld hl,k_fm_prv_chn3_keyon
 	and (hl)
 	ld (hl),a
-	rst write_fm
+	rst fm_write
 	jp @@next
 	
 	
@@ -2890,7 +2890,7 @@ kn_play:
 	cpl
 	and (hl)
 	ld (hl),a
-	rst write_fm
+	rst fm_write
 +:	
 	
 	
@@ -2919,7 +2919,7 @@ kn_play:
 	
 	;mul/dt
 	ld a,(hl)
-	rst write_fm
+	rst fm_write
 	add hl,de
 	add hl,de
 	ld a,b
@@ -2929,7 +2929,7 @@ kn_play:
 	;everything that isn't TL
 -:	ld b,a
 	ld a,(hl)
-	rst write_fm
+	rst fm_write
 	add hl,de
 	ld a,b
 	add c
@@ -2949,12 +2949,12 @@ kn_play:
 	
 	ld b,$b2
 	ld a,(ix+t_fm+fm_b0)
-	rst write_fm
+	rst fm_write
 	
 	ld b,$b6
 	ld a,(ix+t_fm+fm_b4)
 	or (ix+t_pan)
-	rst write_fm
+	rst fm_write
 	
 +:	
 	
@@ -2986,7 +2986,7 @@ kn_play:
 	add d
 	jp p,+
 	ld a,e
-+:	rst write_fm
++:	rst fm_write
 	
 	ld ix,(k_cur_track_ptr)
 	
@@ -3003,12 +3003,12 @@ kn_play:
 	add hl,bc
 	ld b,(hl)
 	ld a,d
-	rst write_fm
+	rst fm_write
 	ld a,b
 	sub 4
 	ld b,a
 	ld a,e
-	rst write_fm
+	rst fm_write
 	
 	
 	
@@ -3027,7 +3027,7 @@ kn_play:
 @@setkey:
 	ld (hl),a
 	ld b,$28
-	rst write_fm
+	rst fm_write
 	
 	
 	
@@ -3046,7 +3046,7 @@ kn_play:
 	
 	;turn off extd.chn3
 	xor a
-	rst write_fm
+	rst fm_write
 	
 	
 @fm_normal_out:
@@ -3102,7 +3102,7 @@ kn_play:
 	or b
 -:	ld b,a
 	ld a,c
-	rst write_fm
+	rst fm_write
 	ld a,b
 	add 4
 	cp $90
@@ -3111,7 +3111,7 @@ kn_play:
 	;key off
 	ld a,(k_temp+2)
 	ld b,$28
-	call write_fm_1
+	call fm_write_1
 	
 	;disable dac
 	ld a,(k_temp)
@@ -3174,7 +3174,7 @@ kn_play:
 	;write panning
 	ld b,$b6
 	ld a,(ix+t_pan)
-	rst write_fm
+	rst fm_write
 	
 	;if there is a new note, init the sample
 	bit T_FLG_NOTE_RESET,(ix+t_flags)
@@ -3302,7 +3302,7 @@ kn_play:
 	;write panning
 	ld b,$b6
 	ld a,(ix+t_pan)
-	rst write_fm
+	rst fm_write
 	
 	
 	;get sample pointer
@@ -3374,9 +3374,190 @@ kn_play:
 @@no_dac:
 	
 	
+	;; if the note will be reset, keyoff first
+	bit T_FLG_NOTE_RESET,(ix+t_flags)
+	jr z,+
+	ld b,$28
+	ld a,(k_temp+2)
+	call fm_write_1
++:
+	
+	;; write fm patch
+	
+	bit T_FLG_FM_UPDATE,(ix+t_flags)
+	jr z,@@no_patch
+	res T_FLG_FM_UPDATE,(ix+t_flags)
+	
+	;get pointer to patch in hl
+	ld hl,t_fm
+	ld d,ixh
+	ld e,ixl
+	add hl,de
+	
+	;get register in b
+	ld a,(k_temp+1)
+	or $30
+	ld de,4
+	ld c,$10
+	
+	;mul/dt
+-:	ld b,a
+	ld a,(hl)
+	rst fm_write
+	inc hl
+	ld a,b
+	add e
+	cp $40
+	jr c,-
+	
+	;skip tl, we always write it
+	add hl,de
+	add c
+	
+	;everything else
+-:	ld b,a
+	ld a,(hl)
+	rst fm_write
+	inc hl
+	ld a,b
+	add e
+	cp $a0
+	jr c,-
+	
+	;global
+	add c
+	ld b,a
+	ld a,(hl)
+	rst fm_write
 	
 	
 	
+@@no_patch:
+	
+	
+	;write panning
+	ld a,(k_temp+1)
+	or $b4
+	ld b,a
+	ld a,(ix+t_fm+fm_b4)
+	or (ix+t_pan)
+	rst fm_write
+	
+	
+	
+	;; write tl
+	ld h,(ix+t_vol) ;get tl add value in d
+	ld e,(ix+t_macro_vol)
+	inc e
+	call mulu_h_e
+	ex de,hl
+	ld a,(iy+ss_volume)
+	call mulu_de_a
+	sla h
+	rla
+	
+	ld hl,t_fm+fm_40 ;get pointer to tls in hl
+	ld d,ixh
+	ld e,ixl
+	add hl,de
+	
+	ld e,$7f ;(constant $7f in e)
+	xor e
+	ld d,a
+	
+	ld a,(ix+t_fm+fm_b0) ;get algo in c
+	and 7
+	ld c,a
+	
+	ld a,(k_temp+1) ;register in b
+	or $40
+	ld b,a
+	
+	;tl 1
+	ld a,7 - 1
+	cp c
+	ld a,(hl)
+	inc hl
+	jr nc,+
+	add d
+	jp p,+
+	ld a,e
++:	rst fm_write
+	ld a,b
+	add 4
+	ld b,a
+	
+	;tl 3
+	ld a,5 - 1
+	cp c
+	ld a,(hl)
+	inc hl
+	jr nc,+
+	add d
+	jp p,+
+	ld a,e
++:	rst fm_write
+	ld a,b
+	add 4
+	ld b,a
+	
+	;tl 2
+	ld a,4 - 1
+	cp c
+	ld a,(hl)
+	inc hl
+	jr nc,+
+	add d
+	jp p,+
+	ld a,e
++:	rst fm_write
+	ld a,b
+	add 4
+	ld b,a
+	
+	;tl 4
+	ld a,(hl)
+	add d
+	jp p,+
+	ld a,e
++:	rst fm_write
+	
+	
+	
+	
+	
+	;; write frequency
+	call get_effected_pitch
+	ex de,hl
+	
+	ld a,(k_temp+1)
+	or $a4
+	ld b,a
+	ld a,d
+	rst fm_write
+	ld a,b
+	sub 4
+	ld b,a
+	ld a,e
+	rst fm_write
+	
+	
+	
+	;; write key state
+	ld a,(k_temp+2)
+	bit T_FLG_KEYOFF,(ix+t_flags)
+	jr nz,@@keyedoff
+	or $f0
+@@keyedoff:
+	ld b,$28
+	call fm_write_1
+	
+	ld b,a
+	ld a,(k_temp)
+	cp 2
+	jr nz,+
+	ld (k_fm_prv_chn3_keyon),a
++:	
 	
 	
 	
@@ -3393,7 +3574,6 @@ kn_play:
 +:
 	dec a
 	jp p,@fm_loop
-	
 	
 	
 	
