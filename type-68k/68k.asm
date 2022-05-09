@@ -3112,3 +3112,5 @@ z80_blob_end:
 
 	include "KN-COMPILED-MODULE.asm"
 
+	align 1
+

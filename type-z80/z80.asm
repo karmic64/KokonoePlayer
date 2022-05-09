@@ -3350,7 +3350,7 @@ kn_play:
 	call mulu_bc_de
 	ld a,d
 	.rept 3
-		rra
+		rrca
 		rr e
 		rr h
 	.endr

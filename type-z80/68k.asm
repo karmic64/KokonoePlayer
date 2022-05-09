@@ -241,7 +241,8 @@ kn_sync::
 z80_blob:
 	incbin "z80.bin"
 z80_blob_end:
-	
+
+	align 1
 	
 	
 	
