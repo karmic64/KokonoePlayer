@@ -2876,6 +2876,16 @@ int main(int argc, char *argv[])
 	fputc('\n', f);
 	
 	/* samples */
+	double z80_sample_rate;
+	switch (type)
+	{
+		case TYPE_68K:
+			z80_sample_rate = 3579545.0 / 101.0;
+			break;
+		case TYPE_Z80:
+			z80_sample_rate = 3579545.0 / 104.0;
+			break;
+	}
 	fprintf(f,
 		" align 1\n"
 		"kn_sample_tbl:");
@@ -2892,9 +2902,8 @@ int main(int argc, char *argv[])
 				this value is determined through trial and error and
 				will break if the z80 driver is changed
 			*/
-#define Z80_SAMPLE_RATE (3579545.0 / 101.0)
-			unsigned rate = round(((double)s->rate / Z80_SAMPLE_RATE) * 256.0);
-			unsigned center_rate = round(((double)s->center_rate / Z80_SAMPLE_RATE) * 256.0);
+			unsigned rate = round(((double)s->rate / z80_sample_rate) * 256.0);
+			unsigned center_rate = round(((double)s->center_rate / z80_sample_rate) * 256.0);
 			
 			fprintf(f,
 				"kn_smpl_%u: dl %u\n"

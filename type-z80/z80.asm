@@ -180,7 +180,7 @@ ss_size .db
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; private variables
-.enum $1500 ;this is enough for 2 song slots, which the player is too slow to handle anyway
+.enum $1460 ;this is enough for 2 song slots, which the player is too slow to handle anyway
 
 
 k_temp dsb 8 ;general-purpose temporary storage
@@ -201,6 +201,7 @@ k_sample_active dsb 1
 k_sample_ptr dsb 3
 k_sample_loop dsb 3
 k_sample_rate dsb 2
+k_sample_accum db
 
 
 
@@ -453,27 +454,104 @@ reset:
 	
 	
 return_main_loop:
-	;;; wait for next frame
-	ld ix,k_frame_cnt
-	
-	ld hl,0
-	
--:	inc hl
-	ld a,(ix+0)
+	ld a,(k_sample_active)
 	or a
-	jr z,-
-	ld (ix+0),0
+	jr nz,sample_main
 	
-	ld (0),hl
+	;;; idle
+idle:	ld a,(k_frame_cnt)
+	or a
+	jr nz,do_frame
+	jr idle
 	
-	dec l
+	
+	;;; play samples
+sample_main:
+	ld a,$2a
+	ld (FM1REG),a
+	
+	ld a,(k_sample_ptr)
+	ld l,a
+	ld a,(k_sample_ptr+1)
+	ld h,a
+	ld a,(k_sample_ptr+2)
+	ld c,a
+	rst set_bank
+	
+	ld a,(k_sample_rate+1)
+	ld e,a
+	ld d,0
+	ld a,(k_sample_accum)
+	ld b,a
+	
+	jr sample_check
+	
+	
+	
+sample_end:
+	ld hl,FM1REG
+	ld a,$2a
+	ld (hl),a
+	xor a
+	ld (k_sample_active),a
+	ld hl,FM1REG
+-:	bit 7,(hl)
+	jr nz,-
+	inc l
+	ld (hl),a
+	
+	jr idle
+	
+	
+sample_loop_hit:
+	ld hl,k_sample_loop
+	ld a,(hl)
+	inc hl
+	or (hl)
+	inc hl
+	or (hl)
+	jr z,sample_end
+	
+	ld a,(k_sample_loop)
+	ld l,a
+	ld a,(k_sample_loop+1)
+	ld h,a
+	ld a,(k_sample_loop+2)
+	ld c,a
+	rst set_bank
+	
+sample_loop:
+	ld a,(hl)
+	or a
+	jr z,sample_loop_hit
+	ld (FM1DATA),a
+	
+	ld a,(k_sample_rate)
+	add b
+	ld b,a
+	adc hl,de
+	jp nc,sample_check
+	inc c
+	rst set_bank
+	
+sample_check:
+	ld a,(k_frame_cnt)
+	or a
+	jp z,sample_loop
+	
 	ld a,l
-	or h
-	jr nz,+
-	ld hl,2
-	inc (hl)	
-+:	
+	ld (k_sample_ptr),a
+	ld a,h
+	ld (k_sample_ptr+1),a
+	ld a,c
+	ld (k_sample_ptr+2),a
 	
+	ld a,b
+	ld (k_sample_accum),a
+	
+do_frame:
+	xor a
+	ld (k_frame_cnt),a
 	
 	;;; handle 68k commands
 	
@@ -3179,8 +3257,10 @@ kn_play:
 	bit T_FLG_NOTE_RESET,(ix+t_flags)
 	jp z,@@next
 	
-	ld a,1
+	ld a,$80
 	ld (k_sample_active),a
+	ld b,$2b
+	call fm_write_1
 	
 	; get sample index ((note % 12) + (samplebank * 12)) * 2 in de
 	ld l,(ix+t_note) ;get note % 12 in a
@@ -3362,13 +3442,14 @@ kn_play:
 	pop bc
 	
 	pop de
-	pop af
 	jp @@get_sample_ptrs
 	
 	
 @@disable_dac:
 	ld a,0
 	ld (k_sample_active),a
+	ld b,$2b
+	call fm_write_1
 	
 @@no_dac:
 	
