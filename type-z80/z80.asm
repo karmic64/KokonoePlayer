@@ -180,7 +180,7 @@ ss_size .db
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; private variables
-.enum $1400 ;this may need to be increased in the future
+.enum $1500 ;this is enough for 2 song slots, which the player is too slow to handle anyway
 
 
 k_temp dsb 8 ;general-purpose temporary storage
@@ -191,7 +191,6 @@ k_cur_song_slot_ptr dw
 
 
 k_frame_cnt db
-k_cur_frame db
 
 
 k_comm_index db
@@ -459,13 +458,13 @@ return_main_loop:
 	
 	ld hl,0
 	
-	ld a,(ix+1)
 -:	inc hl
-	cp (ix+0)
+	ld a,(ix+0)
+	or a
 	jr z,-
-	ld (0),hl
+	ld (ix+0),0
 	
-	inc (ix+1)
+	ld (0),hl
 	
 	dec l
 	ld a,l
@@ -4050,7 +4049,7 @@ get_effected_pitch:
 	ld a,(ix+t_chn)
 	cp 10
 	bit SS_FLG_LINEAR_PITCH,(iy+ss_flags)
-	jr z,@no_linear
+	jp z,@no_linear
 	
 @linear:
 	;;; linear: pitch is in hl, semitone difference is in d, finetune is in e
@@ -4058,7 +4057,96 @@ get_effected_pitch:
 	
 @@fm:
 	;; apply finetune to fm
-	;TODO
+	
+	ld a,h ;octave in b
+	and $f8
+	ld b,a
+	
+	ld a,h ;fnum in hl
+	and 7
+	ld h,a
+	
+	;if needed, fix the semitone
+	ld a,d
+	or a
+	jr z,+
+	
+	push bc
+	push de
+	
+	push hl
+	add a,5*12
+	ld l,a
+	ld h,0
+	add hl,hl
+	ex de,hl
+	ld hl,(semitune_tbl_base)
+	ld a,(semitune_tbl_base+2)
+	call step_ptr_ahl
+	rst get_byte
+	ld b,a
+	ld c,(hl)
+	pop de
+	call mulu_bc_de
+	ld l,h
+	ld h,e
+	ld a,d
+	.rept 3
+		rrca
+		rr h
+		rr l
+	.endr
+	
+	pop de
+	pop bc
+	
++:	
+	;do any finetuning
+	ld a,e
+	or a
+	jr z,+
+	
+	push bc
+	
+	push hl
+	push hl
+	ld d,0
+	ex de,hl
+	add hl,hl
+	ex de,hl
+	ld hl,(fm_finetune_tbl_base)
+	ld a,(fm_finetune_tbl_base+2)
+	call step_ptr_ahl
+	rst get_byte
+	ld b,a
+	ld c,(hl)
+	pop de
+	call mulu_bc_de
+	pop hl ;we ignore hl, effectively dividing by $10000
+	add hl,de
+	
+	pop bc
++:
+	
+	;if the fnum is too high fix it and the octave
+-:	ld a,h
+	cp 8
+	jr c,@@done
+	
+	ld a,b
+	sub 8
+	ld b,a
+	
+	srl h
+	rr l
+	
+	jr -
+	
+@@done:
+	ld a,b
+	or h
+	ld h,a
+	
 	jr @exit
 	
 	
@@ -4131,7 +4219,27 @@ get_effected_pitch:
 	
 @@fm:
 	;; apply finetune to fm
-	;TODO
+	
+	ld a,h ;octave in b
+	and $f8
+	ld b,a
+	
+	ld a,h ;fnum in hl
+	and 7
+	ld h,a
+	
+	add hl,de
+	ld a,h
+	cp 8
+	ld a,b
+	jr c,+
+	add a,8
+	srl h
+	rr l
++:
+	or h
+	ld h,a
+	
 	jr @exit
 	
 	
