@@ -1,6 +1,6 @@
 # KokonoePlayer
 
-KokonoePlayer is a DefleMask/Furnace-compatible music routine for the Sega Genesis/Mega Drive. It supports almost all effects, both regular and extended channel 3 mode, samples, and a decent chunk of the Furnace compatibility flags. The main player logic runs on the 68000, with the Z80 being entirely relegated to sample playback. It was especially designed for games, and thus supports multiple "song slots" to allow simultaneous music and sound effects.
+KokonoePlayer is a DefleMask/Furnace-compatible music routine for the Sega Genesis/Mega Drive. It supports almost all effects, both regular and extended channel 3 mode, samples, and a couple of the Furnace compatibility flags. The main player logic runs on the 68000, with the Z80 being entirely relegated to sample playback. It was especially designed for games, and thus supports multiple "song slots" to allow simultaneous music and sound effects.
 
 Unlike practically all existing Genesis sound drivers out there, this is not just a VGM player, it's a real player with real sequenced music data. This means the player will take more CPU time than a VGM player, but it can save a lot of space in your ROM. If CPU time is an issue, a Z80-only variant with decreased sample quality is planned, but not ready yet.
 
@@ -141,7 +141,7 @@ Returns the current sync flag value, and then resets it to 0. The sync value is 
 
 Old (and possibly new) DefleMask modules ARE NOT supported. If the conversion of a module fails, and you get a message that the version is not 24, try resaving your module with v0.12.1 (the last free version).
 
-At the time of writing, the latest Furnace module version was 83. If the people responsible ever introduce any breaking changes, please contact me.
+At the time of writing, the latest Furnace module version was 106. If the people responsible ever introduce any breaking changes, please contact me.
 
 The following effects are not supported:
 

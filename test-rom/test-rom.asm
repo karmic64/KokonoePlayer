@@ -272,16 +272,16 @@ mainloop:
 	move.b d0,d2
 	andi.b #9,d2
 	beq .noup
-	cmpi.b #23,d1
-	bhs .noup
+	;cmpi.b #23,d1
+	;bhs .noup
 	addq.b #1,d1
 .noup
 
 	move.b d0,d2
 	andi.b #6,d2
 	beq .nodown
-	tst.b d1
-	beq .nodown
+	;tst.b d1
+	;beq .nodown
 	subq.b #1,d1
 .nodown
 	
