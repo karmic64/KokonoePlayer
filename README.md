@@ -1,3 +1,7 @@
+# WARNING
+
+This repository is no longer being updated, see [here](https://github.com/karmic64/KokonoePlayer-Lite) for the replacement.
+
 # KokonoePlayer
 
 KokonoePlayer is a DefleMask/Furnace-compatible music routine for the Sega Genesis/Mega Drive. It supports almost all effects, both regular and extended channel 3 mode, samples, and a couple of the Furnace compatibility flags. The main player logic runs on the 68000, with the Z80 being entirely relegated to sample playback. It was especially designed for games, and thus supports multiple "song slots" to allow simultaneous music and sound effects.
